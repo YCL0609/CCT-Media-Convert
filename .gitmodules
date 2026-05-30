@@ -1,0 +1,4 @@
+[submodule "quickjs"]
+	ignore = all
+	path = quickjs
+	url = https://github.com/quickjs-ng/quickjs.git

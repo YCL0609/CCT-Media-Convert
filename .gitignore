@@ -1,0 +1,10 @@
+sanjuuni/
+.vscode/
+output/
+ffmpeg/
+input/
+logs/
+out/
+
+*.json
+log.txt

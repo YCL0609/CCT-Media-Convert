@@ -1,0 +1,26 @@
+
+CCT-Media-Convert (v0.2)
+将图像/视频转换为 CC:T (ComputerCraft: Tweaked) 显示器可用的格式
+
+用法:
+  $NAME$ [-I | -V] [-d | -f] -i <input> -o <output> [选项]
+
+选项:
+  -h, --help                  显示此帮助信息
+  -I, --image                 处理图像模式 (默认, 与 -V 互斥)
+  -V, --video                 处理视频模式 (与 -I 互斥)
+  -d, --dir                   文件夹模式 (默认, 与 -f 互斥)
+  -f, --file                  单文件模式 (与 -d 互斥)
+  -i, --input <路径>          输入目录/文件路径 (默认: 同目录下的input)
+  -o, --output <路径>         输出目录/文件路径 (默认: 同目录下的output)
+  -l, --logDir <路径>         日志文件路径 (默认: 同目录下的logs文件夹)
+  -c, --config <路径>         程序配置文件路径 (默认: 同目录下的config.json)
+  -M[WxH], --matrix=[WxH]     显示器矩阵大小 (默认: 4x3)
+  -S[WxH], --cellsize=[WxH]   单个显示器像素大小 (默认: 164x81)
+  -t[count], --thread=[count] 使用几个线程处理 (默认: 2)
+  --sanjuuniArgs="Args"       调用 sanjuuni 时传入的额外参数，用空格分割 
+                              (默认: "-k -L -O -3")
+
+注:
+  若程序启动时不带任何参数, 将自动启动本地 HTTP 服务器并打开浏览器,
+  进入可视化网页界面进行操作。

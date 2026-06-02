@@ -1,0 +1,480 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (C) 2026 YCL */
+
+#define _CRT_SECURE_NO_WARNINGS
+
+#include "mongoose.h"
+#include "quickjs.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef JS_SHARED_LIBRARY
+    #define JS_INIT_MODULE js_init_module
+#else
+    #define JS_INIT_MODULE js_init_module_mongoose
+#endif
+
+static struct mg_mgr mgr;
+static JSContext *global_ctx = NULL;
+static JSValue js_handler = JS_UNDEFINED;
+
+static void dump_exception(JSContext *ctx) {
+}
+
+// 响应头构建
+static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
+    if (!JS_IsObject(headers_obj)) {
+        return NULL;
+    }
+
+    JSValue names = JS_GetOwnPropertyNames(ctx, headers_obj);
+    if (JS_IsException(names)) {
+        return NULL;
+    }
+
+    JSValue len_val = JS_GetPropertyStr(ctx, names, "length");
+    uint32_t len = 0;
+    JS_ToUint32(ctx, &len, len_val);
+    JS_FreeValue(ctx, len_val);
+
+    char *headers = NULL;
+    size_t headers_len = 0;
+
+    for (uint32_t i = 0; i < len; i++) {
+        JSValue key_val = JS_GetPropertyUint32(ctx, names, i);
+        if (JS_IsException(key_val)) {
+            continue;
+        }
+
+        const char *key = JS_ToCString(ctx, key_val);
+        if (!key) {
+            JS_FreeValue(ctx, key_val);
+            continue;
+        }
+
+        JSValue value_val = JS_GetPropertyStr(ctx, headers_obj, key);
+        if (JS_IsException(value_val) || JS_IsUndefined(value_val) || JS_IsNull(value_val)) {
+            JS_FreeCString(ctx, key);
+            JS_FreeValue(ctx, key_val);
+            JS_FreeValue(ctx, value_val);
+            continue;
+        }
+
+        const char *value = JS_ToCString(ctx, value_val);
+        if (value) {
+            size_t key_len = strlen(key);
+            size_t val_len = strlen(value);
+            size_t needed = key_len + 2 + val_len + 2; 
+
+            char *new_headers = realloc(headers, headers_len + needed + 1);
+            if (!new_headers) {
+                if (headers) free(headers);
+                headers = NULL;
+                
+                JS_FreeCString(ctx, value);
+                JS_FreeValue(ctx, value_val);
+                JS_FreeCString(ctx, key);
+                JS_FreeValue(ctx, key_val);
+                break; 
+            }
+
+            headers = new_headers;
+            
+            memcpy(headers + headers_len, key, key_len);
+            headers_len += key_len;
+            
+            headers[headers_len++] = ':';
+            headers[headers_len++] = ' ';
+            
+            memcpy(headers + headers_len, value, val_len);
+            headers_len += val_len;
+            
+            headers[headers_len++] = '\r';
+            headers[headers_len++] = '\n';
+            headers[headers_len] = '\0';
+
+            JS_FreeCString(ctx, value);
+        }
+
+        JS_FreeValue(ctx, value_val);
+        JS_FreeCString(ctx, key);
+        JS_FreeValue(ctx, key_val);
+    }
+
+    JS_FreeValue(ctx, names);
+    return headers;
+}
+
+static void fn(
+    struct mg_connection *c,
+    int ev,
+    void *ev_data
+) {
+    if (ev != MG_EV_HTTP_MSG) return;
+
+    struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+
+    if (!JS_IsFunction(global_ctx, js_handler)) {
+        mg_http_reply(
+            c,
+            500,
+            "",
+            "<center><h1>500 Internal Server Error</h1></center><hr>No handler"
+        );
+        return;
+    }
+
+    JSValue req = JS_NewObject(global_ctx);
+
+    // 请求协议
+    JS_SetPropertyStr(
+        global_ctx,
+        req,
+        "method",
+        JS_NewStringLen(
+            global_ctx,
+            hm->method.buf,
+            hm->method.len
+        )
+    );
+
+    // 请求 URI 
+    JS_SetPropertyStr(
+        global_ctx,
+        req,
+        "uri",
+        JS_NewStringLen(
+            global_ctx,
+            hm->uri.buf,
+            hm->uri.len
+        )
+    );
+
+    // URI 的查询参数
+    JS_SetPropertyStr(
+        global_ctx,
+        req,
+        "query",
+        JS_NewStringLen(
+            global_ctx,
+            hm->query.buf,
+            hm->query.len
+        )
+    );
+
+    // 请求体
+    JS_SetPropertyStr(
+        global_ctx,
+        req,
+        "body",
+        JS_NewStringLen(
+            global_ctx,
+            hm->body.buf,
+            hm->body.len
+        )
+    );
+
+    // 遍历处理 headers
+    JSValue headers = JS_NewObject(global_ctx);
+    for (int i = 0; i < MG_MAX_HTTP_HEADERS; i++) {
+        struct mg_str *name = &hm->headers[i].name;
+        struct mg_str *value = &hm->headers[i].value;
+
+        if (name->len == 0) break;
+        char key[256];
+
+        snprintf(
+            key,
+            sizeof(key),
+            "%.*s",
+            (int) name->len,
+            name->buf
+        );
+
+        JS_SetPropertyStr(
+            global_ctx,
+            headers,
+            key,
+            JS_NewStringLen(
+                global_ctx,
+                value->buf,
+                value->len
+            )
+        );
+    }
+
+    // 汇总到 headers 键
+    JS_SetPropertyStr(
+        global_ctx,
+        req,
+        "headers",
+        headers
+    );
+
+    JSValue ret =
+        JS_Call(
+            global_ctx,
+            js_handler,
+            JS_UNDEFINED,
+            1,
+            &req
+        );
+
+    JS_FreeValue(
+        global_ctx,
+        req
+    );
+
+    // JS报错返回 HTTP 500
+    if (JS_IsException(ret)) {
+        JSValue exc = JS_GetException(global_ctx);
+        const char *msg = JS_ToCString(global_ctx, exc);
+        if (msg) {
+            fprintf(stderr, "JS Exception: %s\n", msg);
+            JS_FreeCString(global_ctx, msg);
+        }
+        JS_FreeValue(global_ctx, exc);
+        JS_FreeValue(global_ctx, ret);
+
+        mg_http_reply(
+            c,
+            500,
+            "",
+            "<center><h1>500 Internal Server Error</h1></center><hr>JS Exception"
+        );
+
+        return;
+    }
+
+    // JS返回信息不合格返回 HTTP 502
+    if (!JS_IsArray(ret)) {
+        JS_FreeValue(global_ctx, ret);
+
+        mg_http_reply(
+            c,
+            502,
+            "",
+            "<center><h1>502 Bad Gateway</h1></center><hr>Handler must return [status, body]"
+        );
+
+        return;
+    }
+
+    // 返回状态码解析
+    int http_code = 500;
+    JSValue vcode =
+        JS_GetPropertyUint32(
+            global_ctx,
+            ret,
+            0
+        );
+
+    if (JS_IsNumber(vcode)) {
+        JS_ToInt32(
+            global_ctx,
+            &http_code,
+            vcode
+        );
+    }
+
+    // 返回请求体解析
+    JSValue vbody =
+    JS_GetPropertyUint32(
+        global_ctx,
+        ret,
+        1
+    );
+
+    const char *body =
+        JS_ToCString(
+            global_ctx,
+            vbody
+        );
+
+    // 返回请求头构建
+    JSValue vheaders =
+        JS_GetPropertyUint32(
+            global_ctx,
+            ret,
+            2
+        );
+
+    char *headers = build_response_headers(
+        global_ctx,
+        vheaders
+    );
+
+    // 返回相应
+    mg_http_reply(
+        c,
+        http_code,
+        headers ? headers : "",
+        "%s",
+        body ? body : ""
+    );
+
+    if (headers) { free(headers); }
+
+    if (body) {
+        JS_FreeCString(
+            global_ctx,
+            body
+        );
+    }
+
+    JS_FreeValue(
+        global_ctx,
+        vheaders
+    );
+
+    JS_FreeValue(
+        global_ctx,
+        vcode
+    );
+
+    JS_FreeValue(
+        global_ctx,
+        vbody
+    );
+
+    JS_FreeValue(
+        global_ctx,
+        ret
+    );
+}
+
+static JSValue js_serve(
+    JSContext *ctx,
+    JSValueConst this_val,
+    int argc,
+    JSValueConst *argv
+) {
+    // 参数数量检查
+    if (argc < 2) {
+        return JS_ThrowTypeError(
+            ctx,
+            "Missing parameter"
+        );
+    }
+
+    // 端口参数检查
+    int32_t port;
+    if (JS_ToInt32(
+            ctx,
+            &port,
+            argv[0]
+        )) 
+    {
+        return JS_EXCEPTION;
+    }
+
+    // 处理函数检查
+    if (!JS_IsFunction(
+            ctx,
+            argv[1]
+        )) {
+
+        return JS_ThrowTypeError(
+            ctx,
+            "handler must be a function"
+        );
+    }
+
+    if (!JS_IsUndefined(js_handler)) {
+        JS_FreeValue(
+            ctx,
+            js_handler
+        );
+    }
+
+    // 设置处理参数
+    js_handler =
+        JS_DupValue(
+            ctx,
+            argv[1]
+        );
+
+    global_ctx = ctx;
+
+    // 关闭日志
+    mg_log_set(MG_LL_NONE);
+    
+    // 初始化 http 服务器
+    mg_mgr_init(&mgr); 
+
+    char addr[64];
+    snprintf(
+        addr,
+        sizeof(addr),
+        "http://127.0.0.1:%d",
+        (int) port
+    );
+
+    if (!mg_http_listen(
+            &mgr,
+            addr,
+            fn,
+            NULL
+        )) {
+
+        return JS_ThrowInternalError(
+            ctx,
+            "Http server listen failed"
+        );
+    }
+
+    for (;;) {
+        mg_mgr_poll(
+            &mgr,
+            1000
+        );
+    }
+
+    return JS_UNDEFINED;
+}
+
+static const JSCFunctionListEntry funcs[] = {
+    // js内部函数 serve(port, handler) 导出
+    JS_CFUNC_DEF(
+        "serve",
+        2,
+        js_serve
+    ),
+};
+
+static int js_mongoose_init(
+    JSContext *ctx,
+    JSModuleDef *m
+) {
+    return JS_SetModuleExportList(
+        ctx,
+        m,
+        funcs,
+        sizeof(funcs) / sizeof(funcs[0])
+    );
+}
+
+JSModuleDef *JS_INIT_MODULE(
+    JSContext *ctx,
+    const char *module_name
+) {
+    JSModuleDef *m =
+        JS_NewCModule(
+            ctx,
+            module_name,
+            js_mongoose_init
+        );
+
+    if (!m) return NULL;
+
+    JS_AddModuleExportList(
+        ctx,
+        m,
+        funcs,
+        sizeof(funcs) / sizeof(funcs[0])
+    );
+
+    return m;
+}

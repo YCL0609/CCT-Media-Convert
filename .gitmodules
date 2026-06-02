@@ -1,4 +1,7 @@
-[submodule "quickjs"]
-	ignore = all
-	path = quickjs
+[submodule "deps/quickjs"]
+	path = deps/quickjs
 	url = https://github.com/quickjs-ng/quickjs.git
+
+[submodule "deps/mongoose"]
+        path = deps/mongoose
+        url = https://github.com/cesanta/mongoose.git

@@ -1,0 +1,9 @@
+{
+  "author": "YCL <email@ycl.cool>",
+  "type": "module",
+  "license": "GPL-2.0-or-later",
+  "devDependencies": {
+    "@rollup/plugin-terser": "^1.0.0",
+    "rollup": "^4.61.0"
+  }
+}

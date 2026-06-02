@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: GPL-2.0-or-later
+-- Copyright (C) 2026 YCL
+
 local current_path = shell.getRunningProgram()
 local script_dir = fs.getDir(current_path)
 local self_name = fs.getName(current_path)

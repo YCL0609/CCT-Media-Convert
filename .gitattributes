@@ -1,0 +1,6 @@
+*.conf text eol=lf
+*.json text eol=lf
+*.lua text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.c text eol=lf

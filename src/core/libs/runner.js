@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { Settings, File, Log } from './file.js';
+import { File, Log } from './file.js';
 import { joinPath } from './base.js';
-import { childPIDs } from './exit.js';
+import * as winproc from 'cctmc:winproc';
+import * as os from 'qjs:os';
+
+// 活跃子进程集合
+const childPIDs = new Set();
 
 /**
  * 异步执行程序并重定向输出到文件
@@ -13,45 +17,77 @@ import { childPIDs } from './exit.js';
  */
 async function _execToLog(args, signFunc) {
     const doSign = typeof signFunc === 'function';
+    let endCode = null;
 
     // 执行程序
-    const pid = os.exec(args, {
-        block: false,
-        stdout: Log.execFd,
-        stderr: Log.execFd,
-    });
+    let pid;
+    if (os.platform === 'win32') {
+        const proc = winproc.exec(args, LogG.execPath);
+        const pid = proc.pid;
+        proc.then(code => endCode = code);
+    } else {
+        pid = os.exec(args, {
+            block: false,
+            stdout: LogG.execFd,
+            stderr: LogG.execFd,
+        });
+    }
 
-    // 将 PID 加入子进程列表
+    // 记录子进程
     childPIDs.add(pid);
 
     if (doSign) {
         // 等待程序结束或信号
         while (true) {
-            const [ret, status] = os.waitpid(pid, os.WNOHANG);
-            
-            // 程序主动结束
-            if (ret === pid) {
-                childPIDs.delete(pid);
-                return status
+            if (os.platform === 'win32') {
+                // 程序主动结束
+                if (endCode !== null) {
+                    childPIDs.delete(pid);
+                    return endCode
+                }
+
+                // 终止信号触发
+                if (signFunc()) {
+                    winproc.kill(pid);
+                    childPIDs.delete(pid);
+                    return -1;
+                }
+            } else {
+                const [ret, status] = os.waitpid(pid, os.WNOHANG);
+
+                // 程序主动结束
+                if (ret === pid) {
+                    childPIDs.delete(pid);
+                    return status
+                }
+
+                // 终止信号触发
+                if (signFunc()) {
+                    os.kill(pid, os.SIGTERM);
+                    childPIDs.delete(pid);
+                    return -1;
+                }
             }
-            
-            // 终止信号触发
-            if (signFunc()) {
-                os.kill(pid, os.SIGTERM);
-                childPIDs.delete(pid);
-                return -1;
-            }
-            
+
             await os.sleepAsync(500);
         }
     } else {
         // 等待程序结束
-        const [_, status] = os.waitpid(pid, 0);
-        childPIDs.delete(pid);
-        return status;
+        if (os.platform === 'win32') {
+            while (true) {
+                if (endCode !== null) {
+                    childPIDs.delete(pid);
+                    return endCode;
+                }
+                await os.sleepAsync(500);
+            }
+        } else {
+            const [_, status] = os.waitpid(pid, 0);
+            childPIDs.delete(pid);
+            return status;
+        }
     }
 }
-
 /**
  * 通用多线程任务执行器
  * @async
@@ -116,11 +152,12 @@ async function _runMultiThreadJobs({
                 // 任务合规性校验
                 if (
                     !rawJob ||
-                    (typeof rawJob.name === 'string' && !rawJob.name.trim()) ||
+                    (typeof rawJob === 'string' && !rawJob.trim()) ||
                     jobList.processing.has(rawJob) ||
                     jobList.finish.has(rawJob) ||
                     jobList.ignore.has(rawJob)
                 ) {
+                    LogG.debug(`[线程${workerId}] D 任务合规性校验不通过(跳过):`, rawJob);
                     continue;
                 }
 
@@ -149,13 +186,15 @@ async function _runMultiThreadJobs({
                     report,
                 });
                 if (!data.ok) return true; // 静默失败跳转到下一个任务
+                LogG.info(`[线程${workerId}] I 开始转换:`, job);
+
                 // 外部程序调用
                 code = await _execToLog(data.args, () => stopSign);
             } catch (err) {
                 stopSign = true;
                 jobList.processing.delete(job);
                 jobList.ignore.add(job);
-                Log.error(`[线程${workerId}] 启动外部程序失败:`, err.message);
+                LogG.error(`[线程${workerId}] E 启动外部程序失败:`, (err?.message || String(err)));
                 return false;
             }
 
@@ -163,13 +202,13 @@ async function _runMultiThreadJobs({
                 // 正常退出
                 jobList.processing.delete(job);
                 jobList.finish.add(job);
-                Log.info(`[线程${workerId}] 转换成功:`, job);
+                LogG.info(`[线程${workerId}] S 转换成功:`, job);
             } else {
                 // 错误退出处理
                 stopSign = true;
                 jobList.processing.delete(job);
                 jobList.ignore.add(job);
-                Log.error(`[线程${workerId}] 执行失败, 错误码:`, code);
+                LogG.error(`[线程${workerId}] E 执行失败, 错误码:`, code);
             }
 
             report();
@@ -204,33 +243,33 @@ async function _runMultiThreadJobs({
  * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的 boolean
  */
 async function runSanjuuni(jobs, progressFunc) {
+    if (!globalThis.SettingsG || !globalThis.LogG) return false;
     if (!jobs || typeof progressFunc !== 'function') return false;
     if (jobs.size === 0) return true;
 
     // 基础参数构建
-    const cfg = Settings.get();
-    const targetW = String(cfg.screen.cellWidth * cfg.screen.width * 2);
-    const targetH = String(cfg.screen.cellHeight * cfg.screen.height * 3);
+    const targetW = String((SettingsG.screen.cellWidth * SettingsG.screen.width * 2) - 1);
+    const targetH = String((SettingsG.screen.cellHeight * SettingsG.screen.height * 3) - 1);
     const finalArgs = [
         '-W', targetW,
         '-H', targetH,
-        '-M8x6@1',
-        ...(cfg.sanjuuniArgs ?? [])
+        '-M8x6',
+        ...(SettingsG.sanjuuniArgs ?? [])
     ];
 
     // 日志输出
-    Log.info(`使用显示器矩阵 ${cfg.screen.width}x${cfg.screen.height}, 目标分辨率 ${targetW}x${targetH}`);
-    Log.info(`一共 ${jobs.size} 个任务, 使用 ${cfg.thread} 个线程并发`);
-    Log.info('sanjuuni 程序参数:', ...finalArgs);
+    LogG.info(`使用显示器矩阵 ${SettingsG.screen.width}x${SettingsG.screen.height}, 目标分辨率 ${targetW}x${targetH}`);
+    LogG.info(`一共 ${jobs.size} 个任务, 使用 ${SettingsG.thread} 个线程并发`);
+    LogG.info('sanjuuni 程序参数:', ...finalArgs);
 
     // 构建预启动函数
     async function perRun({ workerId, job, jobList, report }) {
-        const inFile = joinPath(cfg.sep, cfg.input, job.dir, job.name);
-        const outFile = joinPath(cfg.sep, cfg.output, job.dir, job.name + '.32vid');
+        const inFile = joinPath(SettingsG.sep, SettingsG.input, job);
+        const outFile = joinPath(SettingsG.sep, SettingsG.output, job + '.32v');
 
         // 输入文件检查
         if (!File.isFile(inFile)) {
-            Log.warn(`[线程${workerId}] 输入文件不存在(跳过):`, inFile);
+            LogG.warn(`[线程${workerId}] D 输入文件不存在(跳过):`, inFile);
 
             jobList.processing.delete(job);
             jobList.ignore.add(job);
@@ -245,7 +284,7 @@ async function runSanjuuni(jobs, progressFunc) {
         return {
             ok: true,
             args: [
-                cfg.sanjuuni,
+                SettingsG.sanjuuni,
                 '-i', inFile,
                 '-o', outFile,
                 ...finalArgs,
@@ -256,104 +295,10 @@ async function runSanjuuni(jobs, progressFunc) {
     // 启动多线程工作
     return await _runMultiThreadJobs({
         jobs,
-        thread: cfg.thread,
+        thread: SettingsG.thread,
         progressFunc,
         perRun,
     });
 }
 
-/**
- * 多线程异步 ffmpeg 处理
- * @async
- * @param {Set} jobs - 要执行的初始集合
- * @param {function({
- *   wait: Set<any>;
- *   processing: Set<any>,
- *   finish: Set<any>,
- *   ignore: Set<any>,
- * }): void} progressFunc 进度报告回调函数,调用时传入当前任务队列的实时状态深拷贝对象
- * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的 boolean
- */
-async function runFfmpeg(jobs, progressFunc) {
-    if (!jobs || typeof progressFunc !== 'function') return false;
-    if (jobs.size === 0) return true;
-
-    // 基础参数构建
-    const cfg = Settings.get();
-    const targetW = String(cfg.screen.cellWidth * cfg.screen.width * 2);
-    const targetH = String(cfg.screen.cellHeight * cfg.screen.height * 3);
-    const finalArgs = [
-        '-r', cfg.video.fps,
-        '-vf', `scale=${targetW}:${targetH}:force_original_aspect_ratio=increase,crop=${targetW}:${targetH},setsar=1`,
-        '-f', 'segment',
-        '-g', cfg.video.gop,
-        '-sc_threshold', '0',
-        '-segment_time', cfg.video.segmentTime,
-        '-reset_timestamps', '1',
-    ];
-
-    // 日志输出
-    Log.info(`目标分辨率 ${targetW}x${targetH}, 目标帧率 ${cfg.video.fps}`);
-    Log.info(`关键帧插入间隔 ${cfg.video.gop}, 单个切片长度 ${cfg.video.segmentTime}s`);
-    Log.info(`一共 ${jobs.size} 个任务, 使用 ${cfg.thread} 个线程并发`);
-    Log.info('ffmpeg 程序参数:', ...finalArgs);
-
-    // 构建预启动函数
-    async function perRun({ workerId, job, jobList, report }) {
-        const inFile = joinPath(cfg.sep, cfg.input, job.dir, job.name);
-        const outDir = joinPath(cfg.sep, cfg.output, job.dir, job.name);
-        const ext = job.split('.').pop().toLowerCase();
-
-        // 输入文件检查
-        if (!File.isFile(inFile)) {
-            Log.warn(`[线程${workerId}] 输入文件不存在(跳过):`, inFile);
-
-            jobList.processing.delete(job);
-            jobList.ignore.add(job);
-
-            // 等待1ms防止短时间多次错误爆调用堆栈
-            await new Promise(resolve => os.setTimeout(resolve, 1));
-
-            report();
-            return { ok: false, args: [] };
-        }
-
-        // 输出目录检查
-        if (!File.isDir(outDir)) {
-            if (os.mkdir(outDir) !== 0) {
-                Log.warn(`[线程${workerId}] 无法创建输出文件夹(跳过):`, outDir);
-
-                jobList.processing.delete(job);
-                jobList.ignore.add(job);
-
-                await new Promise(resolve => os.setTimeout(resolve, 1));
-
-                report();
-                return true;
-            }
-        }
-
-        return {
-            ok: true,
-            args: [
-                cfg.ffmpeg,
-                '-i', inFile,
-                ...finalArgs,
-                '-y', joinPath(cfg.sep, outDir, `part_%03d${ext}`)
-            ]
-        };
-    }
-
-    // 启动多线程工作
-    return await _runMultiThreadJobs({
-        jobs,
-        thread: cfg.thread,
-        progressFunc,
-        perRun,
-    });
-}
-
-export {
-    runFfmpeg,
-    runSanjuuni,
-}
+export { runSanjuuni }

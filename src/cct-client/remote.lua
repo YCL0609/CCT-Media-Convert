@@ -1,9 +1,13 @@
+-- SPDX-License-Identifier: GPL-2.0-or-later
+-- Copyright (C) 2026 YCL
+
 ---@diagnostic disable: undefined-field, undefined-global
 local net = require("net")
 local inProcessing = false
 local ACKTimeout = 3
 local serverId = -1
 local ACK = false
+local RST = false
 
 term.setTextColor(colors.cyan)
 print("Use 'A' for the last. \nUse 'D' for the next.\nUse 'W' for random.\nUse 'S' to reload.\n")
@@ -15,7 +19,12 @@ local function waitACK()
     repeat
         if ACK then return true end
         time = time - 1
-        os.sleep(1)
+        if RST then
+            RST = false
+            os.sleep(10)
+        else
+            os.sleep(1)
+        end
     until time <= 0
 
     term.setTextColor(colors.yellow)
@@ -35,8 +44,8 @@ local function doSend(data, count)
     end
 
     -- 发送信息
-    if serverId < 0 and data == "getID" then
-        net.broadcast(data, "picctl")
+    if serverId < 0 and data == "getCID" then
+        net.broadcast("getCID", "picctl")
     else
         net.sendData(serverId, data, "picctl")
     end
@@ -53,6 +62,16 @@ local function network()
     net.listen("picctl", function(data, id)
         if data == "ACK" then
             ACK = true
+        elseif data == "NCK" then
+            ACK = true
+            term.setTextColor(colors.yellow)
+            print("[!] NCK signal received!")
+            print("[I] The server indicates that the data is invalid!")
+            term.setTextColor(colors.white)
+        elseif data == "RST" then
+            RST = true
+            print("[!] RST signal received!")
+            print("[I] Server is busy, try again in 10 seconds.")
         elseif data == "ID" then
             serverId = id
             ACK = true
@@ -63,7 +82,7 @@ end
 -- 控制函数
 local function control()
     print("Detecting remote host...")
-    doSend("getID", 0)
+    doSend("getCID", 0)
     print("Remote host ID: " .. serverId .. "\n")
     while true do
         local _, key = os.pullEvent("key")

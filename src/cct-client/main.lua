@@ -1,34 +1,120 @@
+-- SPDX-License-Identifier: GPL-2.0-or-later
+-- Copyright (C) 2026 YCL
+
 ---@diagnostic disable: undefined-field, undefined-global
 local currentDir = "/" .. fs.getDir(shell.getRunningProgram())
-local json = require("json")
-local net = require("net")
 local inProcessing = false
-
--- 配置
-local ctrlMonName = "top"
-local rsSideName = "left"
-local randomWateTime = 120
-local refreshWateTime = 10
-
--- 读取图片列表和当前索引
-local images = json.load(fs.combine(currentDir, "list.json")) or {}
-local currentIndex = settings.get("picSwitch.index") or 1
-
--- 读取显示器列表
-local monitor_map = {}
-if fs.exists(currentDir .. "/config.json") then
-    local file = fs.open(currentDir .. "/config.json", "r")
-    local content = file.readAll()
-    file.close()
-    monitor_map = textutils.unserializeJSON(content) or {}
-    _G.picMonMap = monitor_map
-else
-    error("'config.json' not found.")
+local isDebug = false
+for _, arg in ipairs(arg) do
+    if arg == "--debug" then
+        isDebug = true
+        break
+    end
 end
 
+--- 递归校验配置对象并补全默认值
+--- @param cfg any 待校验配置
+--- @param defCfg any 默认配置
+--- @return any fcfg 校验后的配置对象
+local function configCheck(cfg, defCfg)
+    if cfg == nil then return defCfg end
+    local cfgType = type(cfg)
+    local defType = type(defCfg)
+
+    -- 基础类型处理
+    if cfgType ~= "table" then
+        if cfgType == defType then
+            return cfg
+        else
+            return defCfg
+        end
+    end
+
+    -- 如果 defaultCfg 是 nil 或者不是 table, 直接返回 defaultCfg
+    if defCfg == nil or defType ~= "table" then
+        return defCfg
+    end
+
+    local result = {}
+
+    -- 遍历检查
+    for key, defaultValue in pairs(defCfg) do
+        result[key] = configCheck(cfg[key], defaultValue)
+    end
+
+    return result
+end
+
+--- 获取指定路径下所有文件夹名称
+--- @param path string 要扫描的路径
+--- @return table folders 文件夹数组, 若出错则返回空
+local function get32vFiles(path)
+    local list = {}
+
+    -- 检查路径本身
+    if not fs.isDir(path) then return list end
+
+    -- 获取原始文件集合
+    local rawList = fs.list(path)
+
+    -- 遍历检查
+    for _, name in ipairs(rawList) do
+        local fullPath = fs.combine(path, name)
+        if not fs.isDir(fullPath) then
+            if string.match(name, "%.32v$") or string.match(name, "%.32vid$") then
+                table.insert(list, name)
+            end
+        end
+    end
+
+    return list
+end
+
+-- 默认配置
+local defCfg = {
+    useNet = true,
+    imgLength = 0,
+    lastIndex = 0,
+    ctrlSide = "top",
+    randomTime = 120,
+    refreshTime = 10,
+    resetSide = "left",
+    imgFolder = "images",
+}
+
+-- 获取并校验配置
+local userCfg = settings.get("picSwitch")
+local config = configCheck(userCfg, defCfg)
+if isDebug then
+    print("[D] Use Configuration: " .. textutils.serialize(config))
+end
+
+-- 播放器文件校验
+local playerFile = fs.combine(currentDir, "32vid-player-mini.lua")
+if not fs.exists(playerFile) or fs.isDir(playerFile) then
+    printError("[E] Player file not found or is a folder")
+    error()
+end
+
+-- 文件夹扫描和校验
+local fileList = get32vFiles(fs.combine(currentDir, config.imgFolder))
+if (#fileList ~= config.imgLength) then
+    config.imgLength = #fileList
+    config.lastIndex = 0
+    settings.save()
+end
+if #fileList == 0 then
+    print("[I] Images list empty")
+    return
+end
+if isDebug then print("[D] Scanned " .. #fileList .. " files") end
+
 -- 初始化控制 UI
-local mon = peripheral.wrap(ctrlMonName)
-if not mon then return end
+local mon = peripheral.wrap(config.ctrlSide)
+if not mon then
+    printError("Control monitor not found")
+    error()
+end
 mon.setTextScale(4)
 local w, h = mon.getSize()
 local unitW = w / 3
@@ -48,55 +134,49 @@ local function loadImage(sign)
 
     -- 信号处理
     if sign == "+" then
-        currentIndex = currentIndex + 1
+        config.lastIndex = config.lastIndex + 1
     elseif sign == "-" then
-        currentIndex = currentIndex - 1
-    elseif sign == "r" and #images > 1 then
+        config.lastIndex = config.lastIndex - 1
+    elseif sign == "r" and #fileList > 1 then
         local newID
         repeat
-            newID = math.random(1, #images)
-        until newID ~= currentIndex
-        currentIndex = newID
+            newID = math.random(1, #fileList)
+        until newID ~= config.lastIndex
+        config.lastIndex = newID
     end
 
     -- 越界检查
-    if currentIndex < 1 then
-        currentIndex = #images
-    elseif currentIndex > #images then
-        currentIndex = 1
+    if config.lastIndex < 1 then
+        config.lastIndex = #fileList
+    elseif config.lastIndex > #fileList then
+        config.lastIndex = 1
     end
 
     -- 获取当前图片 ID 的路径
-    local id = images[currentIndex]
-    if not id or not fs.exists(currentDir .. "images/" .. id) then
-        print("Image not found: " .. currentDir .. "images/" .. id)
-        currentIndex = 1
-        id = images[1]
+    local name = fileList[config.lastIndex]
+    local path = fs.combine(currentDir, config.imgFolder .. "/" .. name)
+    if not name or not fs.exists(path) then
+        if config.lastIndex == 1 then
+            printError("[E] The first image does not exist")
+            error()
+        end
+        print("[W] Image not found switch to the first one: " .. name)
+        config.lastIndex = 1
+        name = fileList[1]
     end
 
     -- 保存索引
-    settings.set("picSwitch.index", currentIndex)
+    settings.set("picSwitch", config)
     settings.save()
 
-    -- 遍历运行图片目录下的所有 .lua 文件
-    if id and fs.exists(currentDir .. "/images/" .. id) then
-        local tasks = {}
-        local files = fs.list(currentDir .. "/images/" .. id)
-        for _, file in ipairs(files) do
-            if file ~= "init.lua" and file ~= "config.json" then
-                table.insert(tasks, function()
-                    local ok, err = pcall(shell.run, currentDir .. "/images/" .. id .. "/" .. file)
-                    if not ok then
-                        print("Error running chunk [" .. file .. "]: " .. tostring(err))
-                    end
-                end)
-            end
-        end
-
-        if #tasks > 0 then
-            parallel.waitForAll(table.unpack(tasks))
-        end
+    -- 运行
+    local ok, err = pcall(shell.run, playerFile, path)
+    if ok then
+        print("[I] Loaded image: " .. name)
+    else
+        print("Error loading image: " .. tostring(err))
     end
+
 
     inProcessing = false
 end
@@ -111,6 +191,7 @@ local function cleanup()
     mon.clear()
 
     -- 还原显示器颜色
+    local monitor_map = settings.get("sanjuuni.multimonitor") or { {} }
     local navColor = term.getPaletteColor(colors.white)
     for _, row in ipairs(monitor_map) do
         for _, id in ipairs(row) do
@@ -131,7 +212,7 @@ end
 -- 图片重载任务
 local function refreshImg()
     local enable = true
-    local time = tonumber(refreshWateTime)
+    local time = tonumber(config.refreshTime)
     if not time or time == 0 then
         enable = false
     elseif time < 0 then
@@ -140,8 +221,8 @@ local function refreshImg()
 
     while true do
         if enable then
-            if not inProcessing then loadImage() end
             os.sleep(time)
+            if not inProcessing then loadImage() end
         else
             -- 监控不存在事件无限期挂起
             os.pullEvent("Imashino Misaki")
@@ -154,7 +235,7 @@ local function autoSwitch()
     -- 配置映射
     local enable = true
     local signTxt
-    local waitTime = tonumber(randomWateTime)
+    local waitTime = tonumber(config.randomTime)
 
     if not waitTime or waitTime == 0 then
         enable = false
@@ -179,33 +260,57 @@ end
 
 -- 网络监听任务
 local function netTask()
-    net.listen("picctl", function(data, id)
-        if data == "next" then -- 下一个
-            loadImage("+")
-            net.sendData(id, "ACK", "picctl")
-        elseif data == "last" then -- 上一个
-            loadImage("-")
-            net.sendData(id, "ACK", "picctl")
-        elseif data == "random" then -- 随机
-            loadImage("r")
-            net.sendData(id, "ACK", "picctl")
-        elseif data == "getID" then  -- 返回计算机ID
-            net.sendData(id, "ID", "picctl")
-        elseif data == "reload" then -- 重置
-            cleanup()
-            net.sendData(id, "ACK", "picctl")
-            os.sleep(1)
-            os.reboot()
+    if config.useNet then
+        local net = require("net")
+        net.listen("picctl", function(data, id)
+            local packID = inProcessing and "RST" or "ACK"
+            if data == "next" then
+                -- 下一个
+                loadImage("+")
+                net.sendData(id, packID, "picctl")
+            elseif data == "last" then
+                -- 上一个
+                loadImage("-")
+                net.sendData(id, packID, "picctl")
+            elseif data == "random" then
+                -- 随机
+                loadImage("r")
+                net.sendData(id, packID, "picctl")
+            elseif string.sub(data, 1, 4) == "set-" then
+                -- 设置指定索引图片
+                local num = tonumber(string.sub(data, 4, #data))
+                if num == nil or num < 1 or num > #fileList then
+                    net.sendData(id, "NCK", "picctl")
+                end
+                config.lastIndex = num
+                loadImage()
+                net.sendData(id, packID, "picctl")
+            elseif data == "getCID" then
+                -- 返回计算机ID
+                net.sendData(id, "ID", "picctl")
+            elseif data == "reload" then
+                -- 重置
+                cleanup()
+                net.sendData(id, packID, "picctl")
+                os.sleep(1)
+                os.reboot()
+            end
+        end)
+    else
+        while true do
+            -- 监控不存在事件无限期挂起
+            os.pullEvent("Sumi Serina")
         end
-    end)
+    end
 end
 
 -- UI 任务
 local function uiTask()
     while true do
         local _, side, x = os.pullEvent("monitor_touch")
+        print("aaaa")
 
-        if side == ctrlMonName then
+        if side == config.ctrlSide then
             if x <= unitW then
                 loadImage("-") -- 上一个
             elseif x > unitW * 2 then
@@ -223,7 +328,7 @@ end
 local function redstoreTask()
     while true do
         os.pullEvent("redstone")
-        if redstone.getInput(rsSideName) then
+        if redstone.getInput(config.resetSide) then
             cleanup()
             os.sleep(1)
             os.reboot()
@@ -232,6 +337,7 @@ local function redstoreTask()
 end
 
 -- 初始化显示
+if isDebug then os.sleep(2) end
 loadImage()
 
 -- 启动任务

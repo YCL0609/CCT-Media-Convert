@@ -47,4 +47,3 @@ configure_and_build "build-win" \
   -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
   -DQJS_BUILD_CLI_STATIC=ON \
   -DCMAKE_BUILD_TYPE=Release
-

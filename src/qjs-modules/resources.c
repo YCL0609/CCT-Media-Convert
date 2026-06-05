@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (C) 2026 YCL */
+
 #include <string.h>
 #include "quickjs.h"
 
@@ -57,6 +60,7 @@ static JSValue js_getSource(
 }
 
 static const JSCFunctionListEntry funcs[] = {
+    // js内部函数 getSource(id) 导出
     JS_CFUNC_DEF(
         "getSource",
         1,

@@ -18,7 +18,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-while IFS='=' read -r NAME FILE; do
+echo "==> 预构建 QuickJS 模块 ..."
+
+while IFS='=' read -r NAME FILE || [[ -n "$NAME" || -n "$FILE" ]]; do
 
     [[ -z "$NAME" ]] && continue
     [[ "$NAME" =~ ^# ]] && continue

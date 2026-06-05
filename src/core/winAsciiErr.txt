@@ -1,0 +1,15 @@
+:(
+检测到路径包含非 ASCII 字符, 当前程序将立即退出，以避免产生不可预期的行为。  
+Detected path(s) containing non-ASCII characters. The program will now exit to avoid undefined or unexpected behavior.
+
+由于 QuickJS 在 Windows 平台上通过 msvcrt 访问文件系统，处理包含非 ASCII 字符的路径时，可能出现未定义行为。
+Because QuickJS accesses the file system on the Windows platform through msvcrt, undefined behavior may occur when handling paths containing non-ASCII characters.
+
+本程序作者目前不具备 C 语言大项目开发或维护的能力，因此暂时无法修复。  
+The author of this program currently does not have the ability to develop or maintain large C language projects, so it is temporarily unable to be fixed.
+
+    QuickJS-NG issue (Unicode paths on Windows):  
+    https://github.com/quickjs-ng/quickjs/issues/505
+
+    Character sets used in Windows file names:  
+    https://learn.microsoft.com/en-us/windows/win32/intl/character-sets-used-in-file-names

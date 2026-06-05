@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { allowdExt, File, Log, Settings, runSanjuuni } from './libs/index.js';
+import { allowdExt, File, runSanjuuni } from './libs/index.js';
 
 /**
  * 图片转换预处理
@@ -16,27 +16,28 @@ import { allowdExt, File, Log, Settings, runSanjuuni } from './libs/index.js';
  * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的`boolean`
  */
 export async function imagePerProcess(progressFunc, customList) {
-    print('bbb')
+    if (!globalThis.LogG || !globalThis.SettingsG) return false;
     if (typeof progressFunc !== 'function') return false;
-    const cfg = Settings.get();
 
     // 构建待处理列表
-    const rawList = new Set(cfg.isDir
-        ? File.scanFile(cfg.input, allowdExt.image)
-        : [cfg.input]);
+    const rawList = new Set(SettingsG.type === 1
+        ? File.scanFile(SettingsG.sep, SettingsG.input, allowdExt)
+        : [SettingsG.input]);
     const files = (customList && customList?.length !== 0)
         ? new Set(customList.filter(e => rawList.has(e)))
         : rawList;
     if (files.size === 0) {
-        Log.warn('待处理列表为空');
+        LogG.warn('待处理列表为空');
         return true;
     }
 
+    LogG.info('待处理列表:', [...files])
+
     // 构建工作列表
-    const jobList = new Set([...files].map(item => ({ name: item, dir: '' })));
+    const jobList = new Set([...files]);
 
     // Sanjuuni 转换
     const ok = await runSanjuuni(jobList, progressFunc);
-    if (!ok) Log.error('Sanjuuni 转换失败, 处理进程终止!');
+    if (!ok) LogG.error('Sanjuuni 转换失败, 处理进程终止!');
     return ok
 }

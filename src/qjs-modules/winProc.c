@@ -1,3 +1,6 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Copyright (C) 2026 YCL */
+
 #ifdef _WIN32
     #include <windows.h>
     #include <tlhelp32.h>
@@ -12,6 +15,8 @@
 #endif
 
 static JSClassID js_winproc_class_id;
+
+#ifdef _WIN32
 
 typedef struct {
     HANDLE hProcess;
@@ -140,292 +145,288 @@ static JSValue js_exec(
     int argc,
     JSValueConst *argv)
 {
-    #ifdef _WIN32
-        int i;
-        size_t len = 0;
-        char *cmdline;
-        char *p;
+    int i;
+    size_t len = 0;
+    char *cmdline;
+    char *p;
 
-        if (argc < 1 || (!JS_IsArray(argv[0]) && !JS_IsString(argv[0])))
-            return JS_ThrowTypeError(ctx, "array or string expected");
+    if (argc < 1 || (!JS_IsArray(argv[0]) && !JS_IsString(argv[0])))
+        return JS_ThrowTypeError(ctx, "array or string expected");
 
-        if (JS_IsString(argv[0])) {
-            const char *s = JS_ToCString(ctx, argv[0]);
-            if (!s)
-                return JS_EXCEPTION;
-            len = strlen(s);
-            cmdline = js_malloc(ctx, len + 1);
-            if (!cmdline) {
-                JS_FreeCString(ctx, s);
-                return JS_EXCEPTION;
-            }
-            memcpy(cmdline, s, len + 1);
+    if (JS_IsString(argv[0])) {
+        const char *s = JS_ToCString(ctx, argv[0]);
+        if (!s)
+            return JS_EXCEPTION;
+        len = strlen(s);
+        cmdline = js_malloc(ctx, len + 1);
+        if (!cmdline) {
             JS_FreeCString(ctx, s);
-        } else {
-            int64_t count = 0;
-            JS_GetLength(ctx, argv[0], &count);
-            for (i = 0; i < (int)count; i++) {
-                JSValue v = JS_GetPropertyUint32(ctx, argv[0], i);
+            return JS_EXCEPTION;
+        }
+        memcpy(cmdline, s, len + 1);
+        JS_FreeCString(ctx, s);
+    } else {
+        int64_t count = 0;
+        JS_GetLength(ctx, argv[0], &count);
+        for (i = 0; i < (int)count; i++) {
+            JSValue v = JS_GetPropertyUint32(ctx, argv[0], i);
 
-                const char *s = JS_ToCString(ctx, v);
+            const char *s = JS_ToCString(ctx, v);
 
-                if (!s) {
-                    JS_FreeValue(ctx, v);
-                    return JS_EXCEPTION;
-                }
-
-                len += strlen(s) + 3;
-
-                JS_FreeCString(ctx, s);
+            if (!s) {
                 JS_FreeValue(ctx, v);
+                return JS_EXCEPTION;
             }
 
-            cmdline = js_malloc(ctx, len + 1);
+            len += strlen(s) + 3;
 
-            if (!cmdline)
-                return JS_EXCEPTION;
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, v);
+        }
 
-            p = cmdline;
+        cmdline = js_malloc(ctx, len + 1);
+
+        if (!cmdline)
+            return JS_EXCEPTION;
+
+        p = cmdline;
+        *p = 0;
+
+        for (i = 0; i < (int)count; i++) {
+            JSValue v = JS_GetPropertyUint32(ctx, argv[0], i);
+
+            const char *s = JS_ToCString(ctx, v);
+
+            p += sprintf(p, "\"%s\"", s);
+
+            if (i + 1 < (int)count)
+                *p++ = ' ';
+
             *p = 0;
 
-            for (i = 0; i < (int)count; i++) {
-                JSValue v = JS_GetPropertyUint32(ctx, argv[0], i);
+            JS_FreeCString(ctx, s);
+            JS_FreeValue(ctx, v);
+        }
+    }
 
-                const char *s = JS_ToCString(ctx, v);
+    wchar_t *wcmdline = NULL;
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, cmdline, -1, NULL, 0);
+    if (wlen == 0) {
+        js_free(ctx, cmdline);
+        return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
+    }
 
-                p += sprintf(p, "\"%s\"", s);
+    wcmdline = js_malloc(ctx, (size_t)wlen * sizeof(wchar_t));
+    if (!wcmdline) {
+        js_free(ctx, cmdline);
+        return JS_EXCEPTION;
+    }
 
-                if (i + 1 < (int)count)
-                    *p++ = ' ';
+    if (MultiByteToWideChar(CP_UTF8, 0, cmdline, -1, (LPWSTR)wcmdline, wlen) == 0) {
+        js_free(ctx, cmdline);
+        js_free(ctx, wcmdline);
+        return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
+    }
 
-                *p = 0;
+    HANDLE hOutput = INVALID_HANDLE_VALUE;
+    HANDLE hInput = INVALID_HANDLE_VALUE;
+    wchar_t *woutfile = NULL;
 
-                JS_FreeCString(ctx, s);
-                JS_FreeValue(ctx, v);
-            }
+    if (argc >= 2) {
+        if (!JS_IsString(argv[1])) {
+            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
+            return JS_ThrowTypeError(ctx, "string expected");
         }
 
-        wchar_t *wcmdline = NULL;
-        int wlen = MultiByteToWideChar(CP_UTF8, 0, cmdline, -1, NULL, 0);
-        if (wlen == 0) {
+        const char *outPath = JS_ToCString(ctx, argv[1]);
+        if (!outPath) {
             js_free(ctx, cmdline);
-            return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
-        }
-
-        wcmdline = js_malloc(ctx, (size_t)wlen * sizeof(wchar_t));
-        if (!wcmdline) {
-            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
             return JS_EXCEPTION;
         }
 
-        if (MultiByteToWideChar(CP_UTF8, 0, cmdline, -1, (LPWSTR)wcmdline, wlen) == 0) {
+        int woutlen = MultiByteToWideChar(CP_UTF8, 0, outPath, -1, NULL, 0);
+        if (woutlen == 0) {
+            JS_FreeCString(ctx, outPath);
             js_free(ctx, cmdline);
             js_free(ctx, wcmdline);
             return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
         }
 
-        HANDLE hOutput = INVALID_HANDLE_VALUE;
-        HANDLE hInput = INVALID_HANDLE_VALUE;
-        wchar_t *woutfile = NULL;
-
-        if (argc >= 2) {
-            if (!JS_IsString(argv[1])) {
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                return JS_ThrowTypeError(ctx, "string expected");
-            }
-
-            const char *outPath = JS_ToCString(ctx, argv[1]);
-            if (!outPath) {
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                return JS_EXCEPTION;
-            }
-
-            int woutlen = MultiByteToWideChar(CP_UTF8, 0, outPath, -1, NULL, 0);
-            if (woutlen == 0) {
-                JS_FreeCString(ctx, outPath);
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
-            }
-
-            woutfile = js_malloc(ctx, (size_t)woutlen * sizeof(wchar_t));
-            if (!woutfile) {
-                JS_FreeCString(ctx, outPath);
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                return JS_EXCEPTION;
-            }
-
-            if (MultiByteToWideChar(CP_UTF8, 0, outPath, -1, (LPWSTR)woutfile, woutlen) == 0) {
-                JS_FreeCString(ctx, outPath);
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                js_free(ctx, woutfile);
-                return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
-            }
-
+        woutfile = js_malloc(ctx, (size_t)woutlen * sizeof(wchar_t));
+        if (!woutfile) {
             JS_FreeCString(ctx, outPath);
-
-            SECURITY_ATTRIBUTES sa;
-            ZeroMemory(&sa, sizeof(sa));
-            sa.nLength = sizeof(sa);
-            sa.bInheritHandle = TRUE;
-            sa.lpSecurityDescriptor = NULL;
-
-            hOutput = CreateFileW(
-                woutfile,
-                GENERIC_WRITE,
-                FILE_SHARE_READ,
-                &sa,
-                CREATE_ALWAYS,
-                FILE_ATTRIBUTE_NORMAL,
-                NULL
-            );
-
-            if (hOutput == INVALID_HANDLE_VALUE) {
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                js_free(ctx, woutfile);
-                return JS_ThrowInternalError(ctx, "CreateFileW failed (%lu)", GetLastError());
-            }
-
-            hInput = CreateFileW(
-                L"NUL",
-                GENERIC_READ,
-                FILE_SHARE_READ | FILE_SHARE_WRITE,
-                &sa,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
-                NULL
-            );
-
-            if (hInput == INVALID_HANDLE_VALUE) {
-                CloseHandle(hOutput);
-                js_free(ctx, cmdline);
-                js_free(ctx, wcmdline);
-                js_free(ctx, woutfile);
-                return JS_ThrowInternalError(ctx, "CreateFileW failed (%lu)", GetLastError());
-            }
-        }
-
-        STARTUPINFOW si;
-        PROCESS_INFORMATION pi;
-
-        ZeroMemory(&si, sizeof(si));
-        ZeroMemory(&pi, sizeof(pi));
-
-        si.cb = sizeof(si);
-        if (hOutput != INVALID_HANDLE_VALUE) {
-            si.dwFlags |= STARTF_USESTDHANDLES;
-            si.hStdInput = hInput;
-            si.hStdOutput = hOutput;
-            si.hStdError = hOutput;
-        }
-
-        BOOL ok = CreateProcessW(
-            NULL,
-            (LPWSTR)wcmdline,
-            NULL,
-            NULL,
-            hOutput != INVALID_HANDLE_VALUE,
-            CREATE_NO_WINDOW,
-            NULL,
-            NULL,
-            &si,
-            &pi
-        );
-
-        js_free(ctx, cmdline);
-        js_free(ctx, wcmdline);
-
-        if (!ok) {
-            if (hOutput != INVALID_HANDLE_VALUE)
-                CloseHandle(hOutput);
-            if (hInput != INVALID_HANDLE_VALUE)
-                CloseHandle(hInput);
-            if (woutfile)
-                js_free(ctx, woutfile);
-            return JS_ThrowInternalError(
-                ctx,
-                "CreateProcess failed (%lu)",
-                GetLastError()
-            );
-        }
-
-        WinProcData *pd = js_mallocz(ctx, sizeof(*pd));
-        if (!pd) {
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-            if (hOutput != INVALID_HANDLE_VALUE)
-                CloseHandle(hOutput);
-            if (hInput != INVALID_HANDLE_VALUE)
-                CloseHandle(hInput);
-            if (woutfile)
-                js_free(ctx, woutfile);
+            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
             return JS_EXCEPTION;
         }
 
-        pd->hProcess = pi.hProcess;
-        pd->then_cb = JS_UNDEFINED;
-        pd->exit_code = 0;
-        pd->finished = false;
-        pd->has_object = true;
-        pd->thread_done = false;
-        pd->ctx = ctx;
-        InitializeCriticalSection(&pd->lock);
-
-        JSValue proc = JS_NewObjectClass(ctx, js_winproc_class_id);
-        if (JS_IsException(proc)) {
-            DeleteCriticalSection(&pd->lock);
-            js_free(ctx, pd);
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-            if (hOutput != INVALID_HANDLE_VALUE)
-                CloseHandle(hOutput);
-            if (hInput != INVALID_HANDLE_VALUE)
-                CloseHandle(hInput);
-            if (woutfile)
-                js_free(ctx, woutfile);
-            return proc;
+        if (MultiByteToWideChar(CP_UTF8, 0, outPath, -1, (LPWSTR)woutfile, woutlen) == 0) {
+            JS_FreeCString(ctx, outPath);
+            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
+            js_free(ctx, woutfile);
+            return JS_ThrowInternalError(ctx, "MultiByteToWideChar failed");
         }
 
-        JS_SetOpaque(proc, pd);
-        JS_SetPropertyStr(ctx, proc, "pid", JS_NewInt64(ctx, pi.dwProcessId));
+        JS_FreeCString(ctx, outPath);
 
-        HANDLE hThread = CreateThread(NULL, 0, js_winproc_wait_thread, pd, 0, NULL);
-        if (hThread == NULL) {
-            JS_FreeValue(ctx, proc);
-            DeleteCriticalSection(&pd->lock);
-            js_free(ctx, pd);
-            CloseHandle(pi.hThread);
-            CloseHandle(pi.hProcess);
-            if (hOutput != INVALID_HANDLE_VALUE)
-                CloseHandle(hOutput);
-            if (hInput != INVALID_HANDLE_VALUE)
-                CloseHandle(hInput);
-            if (woutfile)
-                js_free(ctx, woutfile);
-            return JS_ThrowInternalError(
-                ctx,
-                "CreateThread failed (%lu)",
-                GetLastError()
-            );
+        SECURITY_ATTRIBUTES sa;
+        ZeroMemory(&sa, sizeof(sa));
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = TRUE;
+        sa.lpSecurityDescriptor = NULL;
+
+        hOutput = CreateFileW(
+            woutfile,
+            GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &sa,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+
+        if (hOutput == INVALID_HANDLE_VALUE) {
+            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
+            js_free(ctx, woutfile);
+            return JS_ThrowInternalError(ctx, "CreateFileW failed (%lu)", GetLastError());
         }
-        CloseHandle(hThread);
-        CloseHandle(pi.hThread);
+
+        hInput = CreateFileW(
+            L"NUL",
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &sa,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+
+        if (hInput == INVALID_HANDLE_VALUE) {
+            CloseHandle(hOutput);
+            js_free(ctx, cmdline);
+            js_free(ctx, wcmdline);
+            js_free(ctx, woutfile);
+            return JS_ThrowInternalError(ctx, "CreateFileW failed (%lu)", GetLastError());
+        }
+    }
+
+    STARTUPINFOW si;
+    PROCESS_INFORMATION pi;
+
+    ZeroMemory(&si, sizeof(si));
+    ZeroMemory(&pi, sizeof(pi));
+
+    si.cb = sizeof(si);
+    if (hOutput != INVALID_HANDLE_VALUE) {
+        si.dwFlags |= STARTF_USESTDHANDLES;
+        si.hStdInput = hInput;
+        si.hStdOutput = hOutput;
+        si.hStdError = hOutput;
+    }
+
+    BOOL ok = CreateProcessW(
+        NULL,
+        (LPWSTR)wcmdline,
+        NULL,
+        NULL,
+        hOutput != INVALID_HANDLE_VALUE,
+        CREATE_NO_WINDOW,
+        NULL,
+        NULL,
+        &si,
+        &pi
+    );
+
+    js_free(ctx, cmdline);
+    js_free(ctx, wcmdline);
+
+    if (!ok) {
         if (hOutput != INVALID_HANDLE_VALUE)
             CloseHandle(hOutput);
         if (hInput != INVALID_HANDLE_VALUE)
             CloseHandle(hInput);
         if (woutfile)
             js_free(ctx, woutfile);
+        return JS_ThrowInternalError(
+            ctx,
+            "CreateProcess failed (%lu)",
+            GetLastError()
+        );
+    }
 
+    WinProcData *pd = js_mallocz(ctx, sizeof(*pd));
+    if (!pd) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        if (hOutput != INVALID_HANDLE_VALUE)
+            CloseHandle(hOutput);
+        if (hInput != INVALID_HANDLE_VALUE)
+            CloseHandle(hInput);
+        if (woutfile)
+            js_free(ctx, woutfile);
+        return JS_EXCEPTION;
+    }
+
+    pd->hProcess = pi.hProcess;
+    pd->then_cb = JS_UNDEFINED;
+    pd->exit_code = 0;
+    pd->finished = false;
+    pd->has_object = true;
+    pd->thread_done = false;
+    pd->ctx = ctx;
+    InitializeCriticalSection(&pd->lock);
+
+    JSValue proc = JS_NewObjectClass(ctx, js_winproc_class_id);
+    if (JS_IsException(proc)) {
+        DeleteCriticalSection(&pd->lock);
+        js_free(ctx, pd);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        if (hOutput != INVALID_HANDLE_VALUE)
+            CloseHandle(hOutput);
+        if (hInput != INVALID_HANDLE_VALUE)
+            CloseHandle(hInput);
+        if (woutfile)
+            js_free(ctx, woutfile);
         return proc;
-    #else
-        return;
-    #endif
+    }
+
+    JS_SetOpaque(proc, pd);
+    JS_SetPropertyStr(ctx, proc, "pid", JS_NewInt64(ctx, pi.dwProcessId));
+
+    HANDLE hThread = CreateThread(NULL, 0, js_winproc_wait_thread, pd, 0, NULL);
+    if (hThread == NULL) {
+        JS_FreeValue(ctx, proc);
+        DeleteCriticalSection(&pd->lock);
+        js_free(ctx, pd);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        if (hOutput != INVALID_HANDLE_VALUE)
+            CloseHandle(hOutput);
+        if (hInput != INVALID_HANDLE_VALUE)
+            CloseHandle(hInput);
+        if (woutfile)
+            js_free(ctx, woutfile);
+        return JS_ThrowInternalError(
+            ctx,
+            "CreateThread failed (%lu)",
+            GetLastError()
+        );
+    }
+    CloseHandle(hThread);
+    CloseHandle(pi.hThread);
+    if (hOutput != INVALID_HANDLE_VALUE)
+        CloseHandle(hOutput);
+    if (hInput != INVALID_HANDLE_VALUE)
+        CloseHandle(hInput);
+    if (woutfile)
+        js_free(ctx, woutfile);
+
+    return proc;
 }
 
 static JSValue js_kill(
@@ -434,29 +435,25 @@ static JSValue js_kill(
     int argc,
     JSValueConst *argv)
 {
-    #ifdef _WIN32
-        int64_t pid;
+    int64_t pid;
 
-        if (JS_ToInt64(ctx, &pid, argv[0]))
-            return JS_EXCEPTION;
+    if (JS_ToInt64(ctx, &pid, argv[0]))
+        return JS_EXCEPTION;
 
-        HANDLE h = OpenProcess(
-            PROCESS_TERMINATE,
-            FALSE,
-            (DWORD)pid
-        );
+    HANDLE h = OpenProcess(
+        PROCESS_TERMINATE,
+        FALSE,
+        (DWORD)pid
+    );
 
-        if (!h)
-            return JS_NewBool(ctx, 0);
+    if (!h)
+        return JS_NewBool(ctx, 0);
 
-        BOOL ok = TerminateProcess(h, 1);
+    BOOL ok = TerminateProcess(h, 1);
 
-        CloseHandle(h);
+    CloseHandle(h);
 
-        return JS_NewBool(ctx, ok);
-    #else
-        return;
-    #endif
+    return JS_NewBool(ctx, ok);
 }
 
 static const JSCFunctionListEntry js_winproc_proto_funcs[] = {
@@ -480,7 +477,7 @@ static int js_winproc_init(
         NULL,
         NULL,
     };
-    if (JS_NewClassID(&js_winproc_class_id) < 0)
+    if (JS_NewClassID(rt, &js_winproc_class_id) < 0)
         return -1;
     if (JS_NewClass(rt, js_winproc_class_id, &class_def) < 0)
         return -1;
@@ -503,6 +500,46 @@ static int js_winproc_init(
             sizeof(JSCFunctionListEntry)
     );
 }
+
+#else /* Non-Windows platform stubs */
+
+static JSValue js_exec(
+    JSContext *ctx,
+    JSValueConst this_val,
+    int argc,
+    JSValueConst *argv)
+{
+    return JS_ThrowInternalError(ctx, "Process execution not supported on this platform");
+}
+
+static JSValue js_kill(
+    JSContext *ctx,
+    JSValueConst this_val,
+    int argc,
+    JSValueConst *argv)
+{
+    return JS_ThrowInternalError(ctx, "Process killing not supported on this platform");
+}
+
+static const JSCFunctionListEntry js_winproc_funcs[] = {
+    JS_CFUNC_DEF("exec", 1, js_exec),
+    JS_CFUNC_DEF("kill", 1, js_kill),
+};
+
+static int js_winproc_init(
+    JSContext *ctx,
+    JSModuleDef *m)
+{
+    return JS_SetModuleExportList(
+        ctx,
+        m,
+        js_winproc_funcs,
+        sizeof(js_winproc_funcs) /
+            sizeof(JSCFunctionListEntry)
+    );
+}
+
+#endif
 
 JSModuleDef *JS_INIT_MODULE(
     JSContext *ctx,

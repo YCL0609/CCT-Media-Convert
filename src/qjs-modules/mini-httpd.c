@@ -29,35 +29,26 @@ static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
         return NULL;
     }
 
-    JSValue names = JS_GetOwnPropertyNames(ctx, headers_obj);
-    if (JS_IsException(names)) {
+    JSPropertyEnum *props = NULL;
+    uint32_t prop_count = 0;
+    
+    if (JS_GetOwnPropertyNames(ctx, &props, &prop_count, headers_obj, JS_GPN_STRING_MASK) < 0) {
         return NULL;
     }
-
-    JSValue len_val = JS_GetPropertyStr(ctx, names, "length");
-    uint32_t len = 0;
-    JS_ToUint32(ctx, &len, len_val);
-    JS_FreeValue(ctx, len_val);
 
     char *headers = NULL;
     size_t headers_len = 0;
 
-    for (uint32_t i = 0; i < len; i++) {
-        JSValue key_val = JS_GetPropertyUint32(ctx, names, i);
-        if (JS_IsException(key_val)) {
-            continue;
-        }
-
-        const char *key = JS_ToCString(ctx, key_val);
+    for (uint32_t i = 0; i < prop_count; i++) {
+        JSAtom atom = props[i].atom;
+        const char *key = JS_AtomToCString(ctx, atom);
         if (!key) {
-            JS_FreeValue(ctx, key_val);
             continue;
         }
 
-        JSValue value_val = JS_GetPropertyStr(ctx, headers_obj, key);
+        JSValue value_val = JS_GetProperty(ctx, headers_obj, atom);
         if (JS_IsException(value_val) || JS_IsUndefined(value_val) || JS_IsNull(value_val)) {
             JS_FreeCString(ctx, key);
-            JS_FreeValue(ctx, key_val);
             JS_FreeValue(ctx, value_val);
             continue;
         }
@@ -76,7 +67,6 @@ static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
                 JS_FreeCString(ctx, value);
                 JS_FreeValue(ctx, value_val);
                 JS_FreeCString(ctx, key);
-                JS_FreeValue(ctx, key_val);
                 break; 
             }
 
@@ -100,10 +90,9 @@ static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
 
         JS_FreeValue(ctx, value_val);
         JS_FreeCString(ctx, key);
-        JS_FreeValue(ctx, key_val);
     }
 
-    JS_FreeValue(ctx, names);
+    JS_FreePropertyEnum(ctx, props, prop_count);
     return headers;
 }
 
@@ -177,7 +166,7 @@ static void fn(
     );
 
     // 遍历处理 headers
-    JSValue headers = JS_NewObject(global_ctx);
+    JSValue req_headers = JS_NewObject(global_ctx);
     for (int i = 0; i < MG_MAX_HTTP_HEADERS; i++) {
         struct mg_str *name = &hm->headers[i].name;
         struct mg_str *value = &hm->headers[i].value;
@@ -195,7 +184,7 @@ static void fn(
 
         JS_SetPropertyStr(
             global_ctx,
-            headers,
+            req_headers,
             key,
             JS_NewStringLen(
                 global_ctx,
@@ -210,7 +199,7 @@ static void fn(
         global_ctx,
         req,
         "headers",
-        headers
+        req_headers
     );
 
     JSValue ret =

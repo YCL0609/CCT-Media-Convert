@@ -1,45 +1,65 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { Log, Settings } from './libs/index.js';
+import { errorExit, exitApp, Log, Settings } from './libs/index.js';
 import { imagePerProcess } from './picture.js';
-import { videoPerProcess } from './video.js';
+import { getSource } from 'cctmc:sources';
 import * as std from 'qjs:std';
 import * as os from 'qjs:os';
 
-const args = scriptArgs.slice(1);
-
-function startServer(params) {
-    print('   ' + params + ' 模式暂未实现, 请使用参数指定处理, 使用"-h"显示帮助')
+function startServer(a) {
+    print('   ' + a + ' 模式暂未实现, 请使用参数指定处理, 使用"-h"显示帮助')
+    os.sleep(1000)
+    exitApp();
 }
 
-// GUI模式
-if ((args[0] ?? '--gui') === '--gui' && args.length <= 1) startServer('GUI');
-
-// API模式
-else if ((args[0] ?? '--api') === '--api' && args.length <= 1) startServer('API');
-
-// 帮助输出
-else if (args.includes('-h') || args.includes('--help')) {
-    const rawText = "aaa  $NAME$";
-    // const rawText = getREs('helpText');
-    const appName = (scriptArgs[0] || '').split(/[\\/]/).pop() || '<Program>';
+// 帮助文本输出
+if (scriptArgs.includes('-h') || scriptArgs.includes('--help')) {
+    const rawText = getSource('helpText');
+    const appName = (os.exePath() || '').split(/[\\/]/).pop() || '<Program>';
     std.out.puts(rawText.replace('$NAME$', appName));
     std.out.flush();
     std.exit(0);
 }
 
-// CLI模式
-else {
-    function process(args) {
-        const wait = args.wait.size;
-        const processing = args.processing.size;
-        const finish = args.finish.size;
-        const ignore = args.ignore.size;
-        Log.info('wait:', wait, 'processing:', processing, 'finish', finish, 'ignore', ignore);
-    }
-
-    const cfg = Settings.get();
-    if (cfg.isImage) imagePerProcess(process);
-    else videoPerProcess(process, process);
+// 初始化
+let cfg, logObj;
+try {
+    cfg = new Settings();
+    logObj = new Log(cfg.sep, cfg.logDir, cfg.debug);
+    globalThis.LogG = logObj;
+    globalThis.SettingsG = cfg;
+} catch (err) {
+    errorExit('初始化错误: ' + err?.message || String(err));
 }
+logObj.debug('使用配置:', JSON.stringify(cfg))
+
+async function main() {
+    switch (cfg.mode) {
+        // CLI模式
+        case 0:
+            logObj.debug('使用 CLI 模式')
+            await imagePerProcess(() => { });
+            break;
+
+        // GUI模式
+        case 1:
+            logObj.debug('使用 GUI 模式')
+            startServer('GUI');
+            break;
+
+        // API模式
+        case 2:
+            logObj.debug('使用 API 模式')
+            startServer('API')
+            break;
+
+        default:
+            throw new Error('模式错误: 未知模式ID ' + cfg.mode);
+            break;
+    }
+}
+
+main()
+    .then(exitApp)
+    .catch(err => errorExit('运行错误: ' + (err?.message + err.stack || String(err))));

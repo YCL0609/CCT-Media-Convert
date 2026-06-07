@@ -17,18 +17,18 @@ export default {
   },
 
   plugins: [
-    terser({
-      ecma: 2020,
-      module: true,
-      toplevel: true,
-      compress: {
-        passes: 3,
-        dead_code: true,
-        unsafe_arrows: true
-      },
-      output: {
-        comments: false 
-      }
-    }),
+    // terser({
+    //   ecma: 2020,
+    //   module: true,
+    //   toplevel: true,
+    //   compress: {
+    //     passes: 3,
+    //     dead_code: true,
+    //     unsafe_arrows: true
+    //   },
+    //   output: {
+    //     comments: false 
+    //   }
+    // }),
   ],
 };

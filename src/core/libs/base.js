@@ -4,6 +4,7 @@
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
 import * as winproc from 'cctmc:winproc';
+import { LogG } from '../main.js';
 
 /** 允许的文件后缀名 */
 const allowdExt = ['.jpg', '.png', '.jpeg'];
@@ -73,6 +74,52 @@ function jsonCheck(cfg, defaultCfg) {
     return result;
 }
 
+/**
+ * 将 ArrayBuffer 安全、无乱码地转换为 UTF-8 字符串
+ * @param {ArrayBuffer} buffer 
+ * @returns {string}
+ */
+function bufferToString(buffer) {
+    if (!buffer || buffer.byteLength === 0) return "";
+
+    // 优先：如果环境支持 TextDecoder，直接使用原生高性能解码
+    if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder("utf-8").decode(buffer);
+    }
+
+    // 备选：纯 JavaScript 健壮的 UTF-8 解码状态机（防截断、防栈溢出）
+    const array = new Uint8Array(buffer);
+    let out = "", i = 0, len = array.length;
+
+    while (i < len) {
+        let c = array[i++];
+        switch (c >> 4) {
+            case 0: case 1: case 2: case 3: case 4: case 5: case 6: case 7:
+                // 0xxxxxxx : 标准 ASCII (英文、数字、标点)
+                out += String.fromCharCode(c);
+                break;
+            case 12: case 13:
+                // 110xxxxx 10xxxxxx : 双字节字符
+                out += String.fromCharCode(((c & 0x1F) << 6) | (array[i++] & 0x3F));
+                break;
+            case 14:
+                // 1110xxxx 10xxxxxx 10xxxxxx : 三字节字符
+                out += String.fromCharCode(((c & 0x0F) << 12) |
+                    ((array[i++] & 0x3F) << 6) |
+                    ((array[i++] & 0x3F) << 0));
+                break;
+            case 15:
+                // 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx : 四字节字符
+                // 转换为 JavaScript 的代理对 (Surrogate Pairs) 存储
+                let cp = ((c & 0x07) << 18) | ((array[i++] & 0x3F) << 12) | ((array[i++] & 0x3F) << 6) | (array[i++] & 0x3F);
+                cp -= 0x10000;
+                out += String.fromCharCode((cp >> 10) | 0xD800, (cp & 0x3FF) | 0xDC00);
+                break;
+        }
+    }
+    return out;
+}
+
 /** 子进程列表 */
 const childPIDs = new Set();
 
@@ -109,13 +156,11 @@ function errorExit(text, id) {
 
     std.err.puts(txt);
     std.err.flush();
-    if (globalThis.LogG) {
-        if (LogG?.logFd) {
-            LogG.logFd?.puts(txt);
-            LogG.logFd?.flush();
-        }
-        LogG?.closeFd();
+    if (LogG?.logFd) {
+        LogG.logFd?.puts(txt);
+        LogG.logFd?.flush();
     }
+    LogG?.closeFd();
 
     std.exit(1);
 }
@@ -126,7 +171,7 @@ function errorExit(text, id) {
  */
 function exitApp() {
     _killChild(true);
-    if (globalThis.LogG) LogG.closeFd();
+    LogG?.closeFd();
     std.exit(0);
 }
 
@@ -136,6 +181,7 @@ export {
     joinPath,
     errorExit,
     jsonCheck,
+    bufferToString,
     allowdExt,
     childPIDs,
 }

@@ -4,7 +4,7 @@
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
 import { getSource } from 'cctmc:sources';
-import { exitApp, joinPath, jsonCheck } from './base.js';
+import { bufferToString, exitApp, joinPath, jsonCheck } from './base.js';
 import { cmdLineHandle } from './cmd.js';
 const _isWin = os.platform === 'win32';
 
@@ -49,34 +49,57 @@ const File = {
     },
 
     /**
-     * 读取文件
-     * @param {string} path 要读取的文件路径
-     * @param {string} defaultContnt 默认的文件内容
-     * @returns {string} 成功返回内容, 失败返回`defaultContnt`
-     */
-    read(path, defaultContnt = '') {
-        if (!path) return '';
-        if (!this.isFile(path)) {
-            if (!this.isDir(path)) this.write(path, 'wb', defaultContnt);
-            return defaultContnt;
-        }
-        const data = std.loadFile(path);
-        if (data === null) return defaultContnt;
+         * 读取文件（支持文本与二进制文件）
+         * @param {string} path 要读取的文件路径
+         * @param {string|ArrayBuffer|Uint8Array} defaultContent 默认的文件内容
+         * @returns {[boolean, string|ArrayBuffer|Uint8Array]} 返回一个元组
+         * - `success`: 操作是否成功
+         * - `content`: 文件内容（ArrayBuffer 或 字符串）, 若操作失败则返回默认内容
+         */
+    read(path, defaultContent = '') {
+        if (!path) return [false, defaultContent];
 
-        return data;
+        if (this.isFile(path)) {
+            const fd = std.open(path, "rb");
+            if (!fd) return [false, defaultContent];
+
+            try {
+                // 获取文件大小
+                fd.seek(0, std.SEEK_END);
+                const size = fd.tell();
+                fd.seek(0, std.SEEK_SET);
+
+                // 分配内存并读取原始二进制数据
+                const buffer = new ArrayBuffer(size);
+                const bytesRead = fd.read(buffer, 0, size);
+
+                if (bytesRead !== size) return [false, defaultContent];
+                return [true, buffer];
+            } catch (_) {
+                return [false, defaultContent];
+            } finally {
+                fd.close();
+            }
+        } else if (this.isDir(path)) {
+            return [false, defaultContent];
+        } else {
+            const [ok, _] = this.write(path, 'wb', defaultContent);
+            return [ok, defaultContent];
+        }
     },
 
     /**
      * 写入文件
      * @param {string} path 要写入的文件路径
      * @param {string} mode 文件写入模式
-     * @param {string} data 要写入的数据
+     * @param {string|ArrayBuffer} data 要写入的数据
      * @returns {[boolean, string|null]} 返回一个元组
      * - `success`: 操作是否成功
      * - `errorMsg`: 失败时的错误信息, 成功时为 null
      */
     write(path, mode, data) {
         if (!path || !mode || !data) return [false, 'Missing parameter'];
+        print(path)
         let fd = null;
         try {
             fd = std.open(path, mode);
@@ -103,11 +126,7 @@ const File = {
         const fileNames = [];
         const allowedExts = Array.isArray(exts) ? exts.map(e => e.toLowerCase()) : [];
         const [files, err] = os.readdir(path);
-
-        if (err !== 0) {
-            LogG.error('文件夹打开错误: Error code', err);
-            return [];
-        }
+        if (err !== 0) throw new Error('Folder open error: Code ' + err);
 
         for (const file of files) {
             if (file === '.' || file === '..') continue;
@@ -175,6 +194,10 @@ class Settings {
     };
     thread = 2; // 并发线程
     sanjuuniArgs = ["-k", "-L", "-O", "-3"]; // sanjuuni  额外参数
+    net = {
+        port: 26609,
+        LANAccess: false,
+    }
 
     sep = ''; // 路径分隔符
     debug = false; // 调试模式
@@ -204,13 +227,15 @@ class Settings {
             screen: { width: 4, height: 3, cellWidth: 164, cellHeight: 81 },
             thread: 2,
             sanjuuniArgs: ["-k", "-L", "-O", "-3"],
-            debug: false
+            net: { port: 26609, LANAccess: false, },
         };
 
         // 获取用户配置
         let userCfg = '{}';
         if (File.isFile(cfgPath)) {
-            userCfg = File.read(cfgPath, JSON.stringify(defSetting));
+            const defCfg = JSON.stringify(defSetting);
+            const [ok, cfg] = File.read(cfgPath, defCfg);
+            userCfg = ok ? bufferToString(cfg) : defCfg;
         }
 
         // 解析配置
@@ -267,20 +292,15 @@ class Settings {
 
     /**
      * 保存配置
-     * @param {string} key 要保存的键名
-     * @param {*} data 要保存的配置
+     * @param {object} data 要保存的配置
      * @returns {[boolean, string|null]} 返回一个元组
      * - `success`: 操作是否成功
      * - `errorMsg`: 失败时的错误信息, 成功时为 null
      */
-    set(key, data) {
-        if (!key || typeof this[key] !== typeof data) return [false, 'Invalid parameter'];
+    set(data) {
+        if (!data || typeof data !== 'object') return [false, 'Invalid parameter'];
 
-        const prev = this[key];
-        this[key] = data;
-
-        // 构建可序列化的配置对象，仅保存必要字段
-        const cfg = {
+        const oldCfg = {
             sanjuuni: this.sanjuuni,
             input: this.input,
             output: this.output,
@@ -288,19 +308,18 @@ class Settings {
             screen: this.screen,
             thread: this.thread,
             sanjuuniArgs: this.sanjuuniArgs,
+            net: this.net,
         };
 
+
         try {
-            const json = JSON.stringify(cfg, null, 2);
-            const [ok, errMsg] = File.write(this.configPath, 'w', json);
-            if (!ok) {
-                // 恢复原值
-                this[key] = prev;
-                return [false, errMsg || 'Write failed'];
-            }
+            const newCfg = jsonCheck(data, oldCfg);
+            const json = JSON.stringify(newCfg, null, 2);
+            const [ok, errMsg] = File.write(this.configPath, 'wb', json);
+            if (!ok) return [false, errMsg || 'Write failed'];
+            Object.assign(this, newCfg);
             return [true, null];
         } catch (err) {
-            this[key] = prev;
             return [false, err?.message || String(err)];
         }
     }

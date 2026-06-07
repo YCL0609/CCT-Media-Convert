@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { File, Log } from './file.js';
-import { joinPath } from './base.js';
+import { LogG, SettingsG } from '../main.js';
+import { File, Log } from '../libs/file.js';
+import { joinPath } from '../libs/base.js';
 import * as winproc from 'cctmc:winproc';
 import * as os from 'qjs:os';
 
@@ -243,7 +244,6 @@ async function _runMultiThreadJobs({
  * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的 boolean
  */
 async function runSanjuuni(jobs, progressFunc) {
-    if (!globalThis.SettingsG || !globalThis.LogG) return false;
     if (!jobs || typeof progressFunc !== 'function') return false;
     if (jobs.size === 0) return true;
 

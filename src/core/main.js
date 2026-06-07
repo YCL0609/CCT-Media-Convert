@@ -2,16 +2,12 @@
 // Copyright (C) 2026 YCL
 
 import { errorExit, exitApp, Log, Settings } from './libs/index.js';
-import { imagePerProcess } from './picture.js';
+import { imagePerProcess } from './runner/picture.js';
+import { startServer } from './net/server.js';
 import { getSource } from 'cctmc:sources';
 import * as std from 'qjs:std';
 import * as os from 'qjs:os';
-
-function startServer(a) {
-    print('   ' + a + ' 模式暂未实现, 请使用参数指定处理, 使用"-h"显示帮助')
-    os.sleep(1000)
-    exitApp();
-}
+print('-----')
 
 // 帮助文本输出
 if (scriptArgs.includes('-h') || scriptArgs.includes('--help')) {
@@ -22,35 +18,34 @@ if (scriptArgs.includes('-h') || scriptArgs.includes('--help')) {
     std.exit(0);
 }
 
-// 初始化
-let cfg, logObj;
+// 初始化并导出
+export let LogG = null;
+export let SettingsG = null;
 try {
-    cfg = new Settings();
-    logObj = new Log(cfg.sep, cfg.logDir, cfg.debug);
-    globalThis.LogG = logObj;
-    globalThis.SettingsG = cfg;
+    SettingsG = new Settings();
+    LogG = new Log(SettingsG.sep, SettingsG.logDir, SettingsG.debug);
 } catch (err) {
-    errorExit('初始化错误: ' + err?.message || String(err));
+    errorExit('初始化错误: ' + err?.stack || String(err));
 }
-logObj.debug('使用配置:', JSON.stringify(cfg))
+LogG.debug('使用配置:', JSON.stringify(SettingsG))
 
 async function main() {
-    switch (cfg.mode) {
+    switch (SettingsG.mode) {
         // CLI模式
         case 0:
-            logObj.debug('使用 CLI 模式')
+            LogG.debug('使用 CLI 模式')
             await imagePerProcess(() => { });
             break;
 
         // GUI模式
         case 1:
-            logObj.debug('使用 GUI 模式')
+            LogG.debug('使用 GUI 模式')
             startServer('GUI');
             break;
 
         // API模式
         case 2:
-            logObj.debug('使用 API 模式')
+            LogG.debug('使用 API 模式')
             startServer('API')
             break;
 
@@ -62,4 +57,4 @@ async function main() {
 
 main()
     .then(exitApp)
-    .catch(err => errorExit('运行错误: ' + (err?.message + err.stack || String(err))));
+    .catch(err => errorExit('运行错误: ' + (err?.message || String(err))));

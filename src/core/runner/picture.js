@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { allowdExt, File, runSanjuuni } from './libs/index.js';
+import { allowdExt, File } from '../libs/index.js';
+import { LogG, SettingsG } from '../main.js';
+import { runSanjuuni } from './libs.js'
 
 /**
  * 图片转换预处理
@@ -16,7 +18,6 @@ import { allowdExt, File, runSanjuuni } from './libs/index.js';
  * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的`boolean`
  */
 export async function imagePerProcess(progressFunc, customList) {
-    if (!globalThis.LogG || !globalThis.SettingsG) return false;
     if (typeof progressFunc !== 'function') return false;
 
     // 构建待处理列表

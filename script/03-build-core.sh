@@ -22,8 +22,9 @@ sed -i '1i\
 #include <windows.h>\
 #endif\
 ' "$ROOT/dist/core.c"
+echo "Header injection successful!"
 sed -i '/int main(int argc, char \*\*argv)/{
 N
 s/int main(int argc, char \*\*argv)\n{/int main(int argc, char **argv)\n{\n#ifdef _WIN32\n    SetConsoleCP(CP_UTF8);\n    SetConsoleOutputCP(CP_UTF8);\n#endif/
 }' "$ROOT/dist/core.c"
-echo "Success!"
+echo "Main function injection successful!"

@@ -1,14 +1,44 @@
+<!-- 
+  SPDX-License-Identifier: GPL-2.0-or-later
+  Copyright (C) 2026 YCL 
+-->
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="stylesheet" href="./index.css">
-    <title>Document</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>CCT Media Convert</title>
+    <link rel="stylesheet" href="./index.css" inline>
 </head>
+
 <body>
-    <h1>aaa</h1>
-    Hello
-    <script src="./index.js"></script>
+    <div class="note-container" id="noteDiv"></div>
+
+    <div class="header">
+        <h1>CCT Media Convert</h1>
+        <div class="status" id="APIStatus">API 状态未知</div>
+    </div>
+
+    <div class="body" id="imgList"></div>
+
+    <div class="footer">
+        <div class="btn-group">
+            <button id="refresh" class="btn btn-refresh" disabled>刷新列表</button>
+            <button id="dojob" class="btn btn-dojob" disabled>处理选择</button>
+            <!-- <button id="upload" class="btn btn-upload" disabled>上传</button> -->
+            <!-- <button id="uploadP" class="btn btn-upload-process" disabled>上传并处理</button> -->
+            <button id="delete" class="btn btn-delete" disabled>删除选定</button>
+        </div>
+        <div class="process">
+            <div class="process-segment process-finish">完成: <a id="processF">0</a></div>
+            <div class="process-segment process-processing">处理中: <a id="processP">0</a></div>
+            <div class="process-segment process-ignore">已忽略: <a id="processI">0</a></div>
+            <div class="process-segment process-wait">等待: <a id="processW">0</a></div>
+        </div>
+    </div>
+    <script src="./index.js" inline></script>
 </body>
+
 </html>

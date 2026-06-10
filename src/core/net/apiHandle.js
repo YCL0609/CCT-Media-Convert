@@ -30,7 +30,6 @@ function _progress(data) {
         _status = {
             inRunning: true,
             inError: false,
-            time: Date.now(),
             wait: [...data.wait],
             processing: [...data.processing],
             finish: [...data.finish],
@@ -40,7 +39,6 @@ function _progress(data) {
         _status = {
             inRunning: false,
             inError: true,
-            time: Date.now(),
             wait: [],
             processing: [],
             finish: [],
@@ -55,36 +53,36 @@ const api = {
     '/api/fs/list': (_, __, body) => {
         const safePath = verifyPath(body.path);
         const list = body.type == 1 // 1文件夹 2文件
-            ? File.scanDir(SettingsG.sep, safePath)
-            : File.scanFile(SettingsG.sep, safePath, body.exts);
-        return _200Json(list);
+            ? File.scanDir(SettingsG.sep, ...safePath)
+            : File.scanFile(SettingsG.sep, ...safePath, body.exts?.split(','));
+        return code._200Json(list);
     },
     // 获取文件
-    '/api/fs/get': (query, headers, body) => {
-        // 默认使用headers
-        let path = headers.path
-        let type = headers['File-Type']
-        // 查询参数解析
-        for (const e in query.split('&')) {
-            if (e.startsWith('path=')) path = encodeURIComponent(e.split('=')[1] ?? '');
-            if (e.startsWith('type=')) path = encodeURIComponent(e.split('=')[1] ?? '');
-        }
-        // 校验和处理
-        const safePath = verifyPath(path);
-        const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, ...safePath);
+    '/api/fs/get': (_, __, body) => {
+        const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, ...verifyPath(body.path));
         if (!File.isFile(finalPath)) return code._404();
-        const [ok, content] = File.read(...safePath);
+        const [ok, content] = File.read(finalPath);
         if (!ok && content === '') throw new Error('File read error');
-        return code._200Buffer(type, content);
+        return code._200Buffer(content);
     },
     // 写入文件
     '/api/fs/set': (_, headers, body) => {
-        const safeName = verifyPath(headers.name)[0] ?? 'noname_' + Date.now() + '.bin';
-        const safePath = verifyPath(headers.path);
+        const safePath = verifyPath(headers['File-Path']);
+        const safeName = verifyPath(headers['File-Name'])[0] ?? 'noname_' + Date.now() + '.bin';
         const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, ...safePath, safeName)
         const [ok, content] = File.write(finalPath, 'wb', body);
         if (!ok && content === '') throw new Error('File read error');
         return code._201();
+    },
+    // 删除文件
+    '/api/fs/del': (_, __, body) => {
+        for (const name of body) {
+            const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, ...verifyPath(name));
+            if (!File.isFile(finalPath)) return code._404();
+            const [ok, content] = File.delete(finalPath);
+            if (!ok && content === '') throw new Error('File delete error: '+ name);
+        }
+        return code._204();
     },
     // 获取配置
     '/api/settings/get': (_, headers) => {
@@ -115,48 +113,21 @@ const api = {
         return code._201();
     },
     // 获取工作状态
-    '/api/job/status': () => {
-        return code._200Json(_status)
-    },
+    '/api/job/status': () => code._200Json(_status),
     // 开始工作
     '/api/job/start': (_, headers, body) => {
         if (_status.inRunning) return code._503();
+        if (!Array.isArray(body)) return code._400('Body load is non-compliant')
+        if (body.length === 0) return code._201();
         _status.inRunning = true;
-
-        if (headers['Job-Type'] === 'multiple') {
-            if (body?.length < 2) return code._400('Body load is non-compliant')
-            imagePerProcess(_progress, body)
-                .then(ok => {
-                    _status.inError = !ok;
-                    _status.inRunning = false;
-                });
-            return code._201()
-        } else if (headers['Job-Type'] === 'single') {
-            if (body?.length !== 1) return code._400('Body load is non-compliant')
-            imagePerProcess(_progress, body)
-                .then(ok => {
-                    _status.inError = !ok;
-                    _status.inRunning = false;
-                });
-            return code._201()
-        } else if (headers['Job-Type'] === 'single-upload') {
-            const tmpName = 'temp_' + Date.now() + '.jpg';
-            const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, 'input', tmpName);
-            const [ok, err] = File.write(finalPath, 'wb', body);
-            if (!ok) throw new Error(err);
-            runSanjuuni(new Set([tmpName]), _progress)
-                .then(ok => {
-                    _status.inError = !ok;
-                    _status.inRunning = false;
-                });
-            return code._201()
-        } else {
-            return code._400("Request header 'Job-Type' is non-compliant");
-        }
-
+        imagePerProcess(_progress, body)
+            .then(ok => {
+                _status.inError = !ok;
+                _status.inRunning = false;
+            });
+        return code._201()
     },
     '/api/job/clearError': () => {
-        if (_status.inRunning) return code._503();
         _status.inError = false;
         return code._201()
     }

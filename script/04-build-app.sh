@@ -31,11 +31,11 @@ musl-gcc $COMMON_CFLAGS $INCLUDES "${SRCS[@]}" \
     
 file "$DIST/app-linux"
 
-# echo "==> 构建 Windows 版本 ..."
-# x86_64-w64-mingw32-gcc $COMMON_CFLAGS $INCLUDES "${SRCS[@]}" \
-#     "$DIST/quickjs/build-win/libqjs.a" \
-#     "$DIST/quickjs/build-win/libqjs-libc.a" \
-#     -o "$DIST/app-win.exe" \
-#     $COMMON_LDFLAGS -static -lws2_32 -lm
+echo "==> 构建 Windows 版本 ..."
+x86_64-w64-mingw32-gcc $COMMON_CFLAGS $INCLUDES "${SRCS[@]}" \
+    "$DIST/quickjs/build-win/libqjs.a" \
+    "$DIST/quickjs/build-win/libqjs-libc.a" \
+    -o "$DIST/app-win.exe" \
+    $COMMON_LDFLAGS -static -lws2_32 -lm
 
-# file "$DIST/app-win.exe"
+file "$DIST/app-win.exe"

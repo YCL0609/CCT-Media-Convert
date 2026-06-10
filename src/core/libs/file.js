@@ -99,7 +99,6 @@ const File = {
      */
     write(path, mode, data) {
         if (!path || !mode || !data) return [false, 'Missing parameter'];
-        print(path)
         let fd = null;
         try {
             fd = std.open(path, mode);
@@ -112,6 +111,21 @@ const File = {
         } finally {
             if (fd) fd.close();
         }
+    },
+
+    /**
+     * 删除文件
+     * @param {string} path 要删除的文件路径
+     * @returns {[boolean, string|null]} 返回一个元组
+     * - `success`: 操作是否成功
+     * - `errorMsg`: 失败时的错误信息, 成功时为 null
+     */
+    delete(path) {
+        if (!path) return [false, 'Missing parameter'];
+        if (!this.isFile(path)) return [false, 'Not a file'];
+        const erron = os.remove(path);
+        if (erron !== 0) return [false, std.strerror(-erron)];
+        return [true, null];
     },
 
     /**
@@ -242,6 +256,7 @@ class Settings {
         const cfg = jsonCheck(JSON.parse(userCfg), defSetting);
         Object.assign(this, jsonCheck(cmd, cfg));
         this.mode = cmd.mode;
+        this.debug = cmd.debug;
         this.configPath = cfgPath;
         this.type = (cmd.type !== 0) ? cmd.type : 1;
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 YCL
 
-import { allowdExt, File } from '../libs/index.js';
+import { allowdExt, File, Log } from '../libs/index.js';
 import { LogG, SettingsG } from '../main.js';
 import { runSanjuuni } from './libs.js'
 
@@ -27,6 +27,7 @@ export async function imagePerProcess(progressFunc, customList) {
     const files = (customList && customList?.length !== 0)
         ? new Set(customList.filter(e => rawList.has(e)))
         : rawList;
+    LogG.debug(`扫描到 ${rawList.size} 个原始图像, 使用 ${files.size} 个图像作为工作列表`)
     if (files.size === 0) {
         LogG.warn('待处理列表为空');
         return true;

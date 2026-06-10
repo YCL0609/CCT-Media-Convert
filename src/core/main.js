@@ -7,7 +7,6 @@ import { startServer } from './net/server.js';
 import { getSource } from 'cctmc:sources';
 import * as std from 'qjs:std';
 import * as os from 'qjs:os';
-print('-----')
 
 // 帮助文本输出
 if (scriptArgs.includes('-h') || scriptArgs.includes('--help')) {
@@ -25,7 +24,7 @@ try {
     SettingsG = new Settings();
     LogG = new Log(SettingsG.sep, SettingsG.logDir, SettingsG.debug);
 } catch (err) {
-    errorExit('初始化错误: ' + err?.stack || String(err));
+    errorExit('初始化错误: ' + err?.message || String(err));
 }
 LogG.debug('使用配置:', JSON.stringify(SettingsG))
 
@@ -34,24 +33,19 @@ async function main() {
         // CLI模式
         case 0:
             LogG.debug('使用 CLI 模式')
-            await imagePerProcess(() => { });
-            break;
+            return imagePerProcess(() => { });
 
         // GUI模式
         case 1:
             LogG.debug('使用 GUI 模式')
-            startServer('GUI');
-            break;
+            return startServer('GUI');
 
         // API模式
         case 2:
             LogG.debug('使用 API 模式')
-            startServer('API')
-            break;
+            return startServer('API')
 
-        default:
-            throw new Error('模式错误: 未知模式ID ' + cfg.mode);
-            break;
+        default: throw new Error('模式错误: 未知模式ID ' + cfg.mode);
     }
 }
 

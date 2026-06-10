@@ -89,23 +89,27 @@ async function _execToLog(args, signFunc) {
         }
     }
 }
+
 /**
  * 通用多线程任务执行器
  * @async
  * @param {object} options 选项参数对象
- * @param {Set} options.jobs 工作集合
+ * @param {Set} options.jobs 工作列表集合
  * @param {number} options.thread 并发线程
  * @param {function({
- *   wait: Set<any>;
- *   processing: Set<any>,
- *   finish: Set<any>,
- *   ignore: Set<any>,
+ *   wait: String[],
+ *   processing: String[],
+ *   finish: String[],
+ *   ignore: String[],
  * }): void} options.progressFunc 进度汇报函数
- * @param {function(context): Promise<{
+ *  - 传入一个对象, 对象包含处于各工作阶段的图片名称数组拷贝
+ * @param {function({workerId:string, job:string}): Promise<{
  *   ok: boolean,
  *   args: string[]
  * }>} options.perRun 预运行函数
- * @returns {Promise<boolean>}
+ *  - 传入一个对象, 包含当前的线程ID和当前工作的图片名称
+ *  - 预期返回一个对象, 包含是否预处理成功的`boolean`和要运行的程序完整命令行数组
+ * @returns {Promise<boolean>} Promise返回一个`boolean`表示是否执行成功
  */
 async function _runMultiThreadJobs({
     jobs,
@@ -124,8 +128,8 @@ async function _runMultiThreadJobs({
         ignore: new Set()
     };
 
-    let stopSign = false; // 全局停止信号
-    let setLock = Promise.resolve(); // 全局取工作并发锁
+    // 全局停止信号
+    let stopSign = false;
 
     // 进度报告函数构建
     const report = () => progressFunc({
@@ -136,16 +140,12 @@ async function _runMultiThreadJobs({
     });
 
     /**
-     * 工作线程
-     * @param {number} workerId 线程ID
+     * 工作线程执行主体
      */
     async function doJob(workerId) {
-        if (stopSign || jobList.wait.size === 0) return;
-
-        // 取任务
-        const newLock = setLock.then(() => {
-            let job = null;
-
+        while (!stopSign) {
+            // 循环获取任务，直到没有任务或触发停止信号
+            let job;
             while (jobList.wait.size > 0) {
                 const rawJob = jobList.wait.values().next().value;
                 jobList.wait.delete(rawJob);
@@ -158,35 +158,35 @@ async function _runMultiThreadJobs({
                     jobList.finish.has(rawJob) ||
                     jobList.ignore.has(rawJob)
                 ) {
-                    LogG.debug(`[线程${workerId}] D 任务合规性校验不通过(跳过):`, rawJob);
+                    LogG.debug(`[线程${workerId}] D 任务合规性校验失败(跳过):`, rawJob)
                     continue;
                 }
 
+                jobList.processing.add(rawJob);
                 job = rawJob;
-                jobList.processing.add(job);
                 break;
             }
-
-            return job;
-        });
-
-        // 释放锁
-        setLock = newLock.then(() => { });
-
-        // 运行任务
-        const hasMore = await newLock.then(async job => {
-            if (!job) return false;
+            if (!job) {
+                LogG.debug(`[线程${workerId}] D 任务列表为空, 线程退出`);
+                break;
+            }
+            LogG.debug(`[线程${workerId}] D 成功获取任务:`, job);
 
             let code;
             try {
                 // 执行预启动函数
-                const data = await perRun({
-                    workerId,
-                    job,
-                    jobList,
-                    report,
-                });
-                if (!data.ok) return true; // 静默失败跳转到下一个任务
+                const data = perRun({ workerId, job });
+
+                // 静默失败
+                if (!data.ok) {
+                    LogG.warn(`[线程${workerId}] E 预运行函数运行失败(跳过):`, job)
+                    jobList.processing.delete(job);
+                    jobList.ignore.add(job);
+                    // 等待1ms防止短时间多次错误爆调用堆栈
+                    await new Promise(resolve => os.setTimeout(resolve, 1));
+                    continue;
+                }
+
                 LogG.info(`[线程${workerId}] I 开始转换:`, job);
 
                 // 外部程序调用
@@ -196,38 +196,39 @@ async function _runMultiThreadJobs({
                 jobList.processing.delete(job);
                 jobList.ignore.add(job);
                 LogG.error(`[线程${workerId}] E 启动外部程序失败:`, (err?.message || String(err)));
-                return false;
+                break;
             }
 
+            // 状态更新
+            jobList.processing.delete(job);
             if (code === 0) {
-                // 正常退出
-                jobList.processing.delete(job);
                 jobList.finish.add(job);
                 LogG.info(`[线程${workerId}] S 转换成功:`, job);
             } else {
-                // 错误退出处理
                 stopSign = true;
-                jobList.processing.delete(job);
                 jobList.ignore.add(job);
                 LogG.error(`[线程${workerId}] E 执行失败, 错误码:`, code);
             }
 
             report();
-            return code === 0;
-        });
-
-        if (hasMore && !stopSign) return await doJob(workerId);
+        }
     }
 
-
-    // 构建线程列表
+    // 构建并启动线程并发
     const workers = [];
     for (let i = 1; i <= thread; i++) {
         workers.push(doJob(i));
     }
-    report(); // 初始化进度报告
 
-    await Promise.all(workers);
+    report(); // 初始化进度报告
+    const startTime = performance.now()
+    await Promise.all(workers); // 等待所有线程执行完毕
+    const totalTime = (performance.now() - startTime).toFixed(3);
+    if (stopSign) {
+        LogG.info(`处理程序终止 - 用时 ${totalTime} ms`)
+    } else {
+        LogG.info(`处理完成 - 用时 ${totalTime} ms`)
+    }
     return !stopSign;
 }
 
@@ -236,12 +237,13 @@ async function _runMultiThreadJobs({
  * @async
  * @param {Set} jobs - 要执行的初始集合
  * @param {function({
- *   wait: Set<any>;
- *   processing: Set<any>,
- *   finish: Set<any>,
- *   ignore: Set<any>,
- * }): void} progressFunc 进度报告回调函数,调用时传入当前任务队列的实时状态深拷贝对象
- * @returns {Promise<boolean>} 返回一个 Promise。返回是否完成的 boolean
+ *   wait: String[],
+ *   processing: String[],
+ *   finish: String[],
+ *   ignore: String[],
+ * }): void} progressFunc 进度汇报函数
+ *  - 传入一个对象, 对象包含处于各工作阶段的图片名称数组拷贝
+ * @returns {Promise<boolean>}  Promise返回一个`boolean`表示是否执行成功
  */
 async function runSanjuuni(jobs, progressFunc) {
     if (!jobs || typeof progressFunc !== 'function') return false;
@@ -263,21 +265,13 @@ async function runSanjuuni(jobs, progressFunc) {
     LogG.info('sanjuuni 程序参数:', ...finalArgs);
 
     // 构建预启动函数
-    async function perRun({ workerId, job, jobList, report }) {
+    function perRun({ workerId, job }) {
         const inFile = joinPath(SettingsG.sep, SettingsG.input, job);
         const outFile = joinPath(SettingsG.sep, SettingsG.output, job + '.32v');
 
         // 输入文件检查
         if (!File.isFile(inFile)) {
-            LogG.warn(`[线程${workerId}] D 输入文件不存在(跳过):`, inFile);
-
-            jobList.processing.delete(job);
-            jobList.ignore.add(job);
-
-            // 等待1ms防止短时间多次错误爆调用堆栈
-            await new Promise(resolve => os.setTimeout(resolve, 1));
-
-            report();
+            LogG.debug(`[线程${workerId}] D 输入文件不存在(跳过):`, inFile);
             return { ok: false, args: [] };
         }
 

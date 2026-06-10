@@ -22,13 +22,12 @@ const code = {
 
     /**
      * 200 OK + ArrayBuffer
-     * @param {string} type Content-Type
      * @param {ArrayBuffer} body 要发送的数据
      * @returns 
      */
-    _200Buffer(type, body) {
+    _200Buffer(body) {
         return [200, {
-            'content-type': type ?? 'application/octet-stream',
+            'content-type': 'application/octet-stream',
             'cache-control': cacheCtrl.no,
         }, body]
     },
@@ -111,24 +110,21 @@ const code = {
 
 /**
  * 解析并校验路径
- * @param {string} base64 要验证的路径base64
+ * @param {string} path 要验证的路径
  * @returns {string[]} 验证后的路径数组
  */
-function verifyPath(base64) {
-
+function verifyPath(path) {
     // 无效的 base64 输入
-    if (!base64 || typeof base64 !== 'string') {
+    if (!path || typeof path !== 'string') {
         throw new Error("Invalid base64 input");
     }
 
     let pathList;
 
     try {
-        const rawStr = atob(base64);
-
         // 防止乱码
         const jsonStr = decodeURIComponent(
-            Array.from(rawStr)
+            Array.from(path)
                 .map(c =>
                     '%' +
                     ('00' + c.charCodeAt(0).toString(16)).slice(-2)
@@ -209,6 +205,7 @@ function verifyPath(base64) {
 
     return pathList;
 }
+
 export {
     code,
     cacheCtrl,

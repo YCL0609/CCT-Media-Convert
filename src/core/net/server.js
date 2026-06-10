@@ -4,7 +4,7 @@
 import { File, joinPath, bufferToString } from '../libs/index.js';
 import { code, cacheCtrl, verifyPath } from './libs.js';
 import { getSource } from 'cctmc:sources';
-import { SettingsG } from '../main.js';
+import { LogG, SettingsG } from '../main.js';
 import { api } from './apiHandle.js';
 import * as net from 'cctmc:mininet';
 import * as os from 'qjs:os';
@@ -13,15 +13,15 @@ import * as os from 'qjs:os';
  * 启动本地 HTTP 服务器
  * @returns {void}
  */
-function startServer() {
+async function startServer() {
     if (SettingsG.mode < 0 || SettingsG.mode > 1) throw new Error('Function running in not GUI or API mode!');
     const pathMap = JSON.parse(getSource('pathMap'));
     const useGUI = SettingsG.mode == 1;
 
-    net.serve(SettingsG.net.LANAccess, SettingsG.net.port ?? 26609, (request) => {
-        print(JSON.stringify(request) + '\n')
+    net.serve(SettingsG.net.LANAccess, SettingsG.net.port ?? 8080, (request) => {
         const rawUri = request.uri.toLowerCase();
         const url = rawUri.includes('?') ? rawUri.split('?')[1] : rawUri;
+        LogG.debug(`收到请求: ${request.method} ${url}`);
         // 心跳包返回
         if (url === '/ping') return code._204();
 
@@ -66,11 +66,15 @@ function startServer() {
         } else {
             return code._405(url.startsWith('/api') ? 'POST' : 'GET');
         }
-    })
+    });
+
+    LogG.info('HTTP 服务器启动成功, 可使用浏览器访问 http://localhost:' + SettingsG.net.port ?? 8080);
 
     // 主循环
     while (true) {
-        net.poll(1000);
+        net.poll();
+        // 释放 CPU 控制权
+        await os.sleepAsync(1);
     }
 }
 

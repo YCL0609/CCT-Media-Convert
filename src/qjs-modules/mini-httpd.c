@@ -11,9 +11,9 @@
 #include <string.h>
 
 #ifdef JS_SHARED_LIBRARY
-    #define JS_INIT_MODULE js_init_module
+#define JS_INIT_MODULE js_init_module
 #else
-    #define JS_INIT_MODULE js_init_module_mongoose
+#define JS_INIT_MODULE js_init_module_mongoose
 #endif
 
 static struct mg_mgr mgr;
@@ -22,63 +22,72 @@ static JSValue js_handler = JS_UNDEFINED;
 static int mg_mgr_initialized = 0;
 
 // 响应头构建
-static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
-    if (!JS_IsObject(headers_obj)) {
+static char *build_response_headers(JSContext *ctx, JSValue headers_obj)
+{
+    if (!JS_IsObject(headers_obj))
+    {
         return NULL;
     }
 
     JSPropertyEnum *props = NULL;
     uint32_t prop_count = 0;
-    
-    if (JS_GetOwnPropertyNames(ctx, &props, &prop_count, headers_obj, JS_GPN_STRING_MASK) < 0) {
+
+    if (JS_GetOwnPropertyNames(ctx, &props, &prop_count, headers_obj, JS_GPN_STRING_MASK) < 0)
+    {
         return NULL;
     }
 
     char *headers = NULL;
     size_t headers_len = 0;
 
-    for (uint32_t i = 0; i < prop_count; i++) {
+    for (uint32_t i = 0; i < prop_count; i++)
+    {
         JSAtom atom = props[i].atom;
         const char *key = JS_AtomToCString(ctx, atom);
-        if (!key) {
+        if (!key)
+        {
             continue;
         }
 
         JSValue value_val = JS_GetProperty(ctx, headers_obj, atom);
-        if (JS_IsException(value_val) || JS_IsUndefined(value_val) || JS_IsNull(value_val)) {
+        if (JS_IsException(value_val) || JS_IsUndefined(value_val) || JS_IsNull(value_val))
+        {
             JS_FreeCString(ctx, key);
             JS_FreeValue(ctx, value_val);
             continue;
         }
 
         const char *value = JS_ToCString(ctx, value_val);
-        if (value) {
+        if (value)
+        {
             size_t key_len = strlen(key);
             size_t val_len = strlen(value);
-            size_t needed = key_len + 2 + val_len + 2 + 1; 
+            size_t needed = key_len + 2 + val_len + 2 + 1;
 
             char *new_headers = realloc(headers, headers_len + needed + 1);
-            if (!new_headers) {
-                if (headers) free(headers);
+            if (!new_headers)
+            {
+                if (headers)
+                    free(headers);
                 headers = NULL;
-                
+
                 JS_FreeCString(ctx, value);
                 JS_FreeValue(ctx, value_val);
                 JS_FreeCString(ctx, key);
-                break; 
+                break;
             }
 
             headers = new_headers;
-            
+
             memcpy(headers + headers_len, key, key_len);
             headers_len += key_len;
-            
+
             headers[headers_len++] = ':';
             headers[headers_len++] = ' ';
-            
+
             memcpy(headers + headers_len, value, val_len);
             headers_len += val_len;
-            
+
             headers[headers_len++] = '\r';
             headers[headers_len++] = '\n';
             headers[headers_len] = '\0';
@@ -97,19 +106,20 @@ static char *build_response_headers(JSContext *ctx, JSValue headers_obj) {
 static void fn(
     struct mg_connection *c,
     int ev,
-    void *ev_data
-) {
-    if (ev != MG_EV_HTTP_MSG) return;
+    void *ev_data)
+{
+    if (ev != MG_EV_HTTP_MSG)
+        return;
 
-    struct mg_http_message *hm = (struct mg_http_message *) ev_data;
+    struct mg_http_message *hm = (struct mg_http_message *)ev_data;
 
-    if (!JS_IsFunction(global_ctx, js_handler)) {
+    if (!JS_IsFunction(global_ctx, js_handler))
+    {
         mg_http_reply(
             c,
             500,
             "Content-Type: text/html\r\n",
-            "<center><h1>500 Internal Server Error</h1></center><hr>No handler"
-        );
+            "<center><h1>500 Internal Server Error</h1></center><hr>No handler");
         return;
     }
 
@@ -117,7 +127,7 @@ static void fn(
 
     // 请求协议
     JS_SetPropertyStr(global_ctx, req, "method", JS_NewStringLen(global_ctx, hm->method.buf, hm->method.len));
-    // 请求 URI 
+    // 请求 URI
     JS_SetPropertyStr(global_ctx, req, "uri", JS_NewStringLen(global_ctx, hm->uri.buf, hm->uri.len));
     // URI 的查询参数
     JS_SetPropertyStr(global_ctx, req, "query", JS_NewStringLen(global_ctx, hm->query.buf, hm->query.len));
@@ -127,20 +137,21 @@ static void fn(
 
     // 处理请求 headers
     JSValue req_headers = JS_NewObject(global_ctx);
-    for (int i = 0; i < MG_MAX_HTTP_HEADERS; i++) {
+    for (int i = 0; i < MG_MAX_HTTP_HEADERS; i++)
+    {
         struct mg_str *name = &hm->headers[i].name;
         struct mg_str *value = &hm->headers[i].value;
 
-        if (name->len == 0) break;
+        if (name->len == 0)
+            break;
         char key[256];
-        snprintf(key, sizeof(key), "%.*s", (int) name->len, name->buf);
+        snprintf(key, sizeof(key), "%.*s", (int)name->len, name->buf);
 
         JS_SetPropertyStr(
             global_ctx,
             req_headers,
             key,
-            JS_NewStringLen(global_ctx, value->buf, value->len)
-        );
+            JS_NewStringLen(global_ctx, value->buf, value->len));
     }
     JS_SetPropertyStr(global_ctx, req, "headers", req_headers);
 
@@ -149,10 +160,12 @@ static void fn(
     JS_FreeValue(global_ctx, req);
 
     // JS 报错处理
-    if (JS_IsException(ret)) {
+    if (JS_IsException(ret))
+    {
         JSValue exc = JS_GetException(global_ctx);
         const char *msg = JS_ToCString(global_ctx, exc);
-        if (msg) {
+        if (msg)
+        {
             fprintf(stderr, "JS Exception: %s\n", msg);
             JS_FreeCString(global_ctx, msg);
         }
@@ -163,27 +176,27 @@ static void fn(
             c,
             500,
             "Content-Type: text/html\r\n",
-            "<center><h1>500 Internal Server Error</h1></center><hr>JS Exception"
-        );
+            "<center><h1>500 Internal Server Error</h1></center><hr>JS Exception");
         return;
     }
 
     // 返回格式校验
-    if (!JS_IsArray(ret)) {
+    if (!JS_IsArray(ret))
+    {
         JS_FreeValue(global_ctx, ret);
         mg_http_reply(
             c,
             502,
             "Content-Type: text/html\r\n",
-            "<center><h1>502 Bad Gateway</h1></center><hr>Handler must return [code, header, body]"
-        );
+            "<center><h1>502 Bad Gateway</h1></center><hr>Handler must return [code, header, body]");
         return;
     }
 
     // 状态码
     int http_code = 200;
     JSValue vcode = JS_GetPropertyUint32(global_ctx, ret, 0);
-    if (JS_IsNumber(vcode)) {
+    if (JS_IsNumber(vcode))
+    {
         JS_ToInt32(global_ctx, &http_code, vcode);
     }
 
@@ -194,37 +207,50 @@ static void fn(
     // 响应体
     JSValue vbody = JS_GetPropertyUint32(global_ctx, ret, 2);
 
+    // 响应体
     size_t body_len = 0;
-    const uint8_t *body_ptr = NULL;
     int is_string = 0;
+    uint8_t *body_ptr = JS_GetArrayBuffer(global_ctx, &body_len, vbody);
 
-    if (JS_IsArrayBuffer(vbody)) {
-        body_ptr = JS_GetArrayBuffer(global_ctx, &body_len, vbody);
-    } else {
+    if (!body_ptr)
+    {
+        // 如果提取 ArrayBuffer 失败，， 退化为字符串处理
         const char *str_body = JS_ToCString(global_ctx, vbody);
-        if (str_body) {
-            body_ptr = (const uint8_t *)str_body;
+        if (str_body)
+        {
+            body_ptr = (uint8_t *)str_body;
             body_len = strlen(str_body);
             is_string = 1;
         }
     }
 
-    // 发送 HTTP 响应
-    mg_http_reply(
+    // 发送响应头
+    mg_printf(
         c,
+        "HTTP/1.1 %d OK\r\n"
+        "Content-Length: %lu\r\n"
+        "%s\r\n",
         http_code,
-        headers ? headers : "",
-        "%.*s",
-        (int)body_len,
-        body_ptr ? (const char *)body_ptr : ""
-    );
+        (unsigned long)body_len,
+        headers ? headers : "");
 
-    // 资源释放
-    if (headers) { 
-        free(headers); 
+    // 发送响应体
+    if (body_len > 0 && body_ptr)
+    {
+        mg_send(c, body_ptr, body_len);
     }
 
-    if (is_string && body_ptr) {
+    // 设置完成标志位
+    c->is_resp = 0;
+
+    // 资源释放
+    if (headers)
+    {
+        free(headers);
+    }
+
+    if (is_string && body_ptr)
+    {
         JS_FreeCString(global_ctx, (const char *)body_ptr);
     }
 
@@ -238,30 +264,35 @@ static JSValue js_serve(
     JSContext *ctx,
     JSValueConst this_val,
     int argc,
-    JSValueConst *argv
-) {
-    if (argc < 3) {
+    JSValueConst *argv)
+{
+    if (argc < 3)
+    {
         return JS_ThrowTypeError(ctx, "Missing parameters (expected: isGlobal, port, handler)");
     }
 
     // 是否允许局域网访问
     int is_global = JS_ToBool(ctx, argv[0]);
-    if (is_global < 0) {
+    if (is_global < 0)
+    {
         return JS_EXCEPTION;
     }
 
     // 端口
     int32_t port;
-    if (JS_ToInt32(ctx, &port, argv[1])) {
+    if (JS_ToInt32(ctx, &port, argv[1]))
+    {
         return JS_EXCEPTION;
     }
 
     // 处理函数
-    if (!JS_IsFunction(ctx, argv[2])) {
+    if (!JS_IsFunction(ctx, argv[2]))
+    {
         return JS_ThrowTypeError(ctx, "handler must be a function");
     }
 
-    if (!JS_IsUndefined(js_handler)) {
+    if (!JS_IsUndefined(js_handler))
+    {
         JS_FreeValue(ctx, js_handler);
     }
 
@@ -269,35 +300,30 @@ static JSValue js_serve(
     global_ctx = ctx;
 
     mg_log_set(MG_LL_NONE);
-    
-    if (!mg_mgr_initialized) {
-        mg_mgr_init(&mgr); 
+
+    if (!mg_mgr_initialized)
+    {
+        mg_mgr_init(&mgr);
         mg_mgr_initialized = 1;
     }
 
     // 根据布尔值决定监听地址
     const char *host = is_global ? "0.0.0.0" : "127.0.0.1";
     char addr[64];
-    snprintf(addr, sizeof(addr), "http://%s:%d", host, (int) port);
+    snprintf(addr, sizeof(addr), "http://%s:%d", host, (int)port);
 
-    if (!mg_http_listen(&mgr, addr, fn, NULL)) {
+    if (!mg_http_listen(&mgr, addr, fn, NULL))
+    {
         return JS_ThrowInternalError(ctx, "Http server listen failed");
     }
 
     return JS_UNDEFINED;
 }
 
+// 只需要导出 poll 函数
 static JSValue js_poll(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
-    int32_t timeout = 0;
-    if (argc > 0) {
-        if (JS_ToInt32(ctx, &timeout, argv[0]) != 0) {
-            timeout = 0;
-        }
-    }
-    if (!mg_mgr_initialized) {
-        return JS_UNDEFINED;
-    }
-    mg_mgr_poll(&mgr, timeout); 
+    if (!mg_mgr_initialized) return JS_UNDEFINED;
+    mg_mgr_poll(&mgr, 0); 
     return JS_UNDEFINED;
 }
 
@@ -309,17 +335,18 @@ static const JSCFunctionListEntry funcs[] = {
 
 static int js_mongoose_init(
     JSContext *ctx,
-    JSModuleDef *m
-) {
+    JSModuleDef *m)
+{
     return JS_SetModuleExportList(ctx, m, funcs, sizeof(funcs) / sizeof(funcs[0]));
 }
 
 JSModuleDef *JS_INIT_MODULE(
     JSContext *ctx,
-    const char *module_name
-) {
+    const char *module_name)
+{
     JSModuleDef *m = JS_NewCModule(ctx, module_name, js_mongoose_init);
-    if (!m) return NULL;
+    if (!m)
+        return NULL;
     JS_AddModuleExportList(ctx, m, funcs, sizeof(funcs) / sizeof(funcs[0]));
     return m;
 }

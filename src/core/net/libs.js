@@ -1,5 +1,5 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
 /** 缓存标头 */
 const cacheCtrl = {
@@ -23,7 +23,6 @@ const code = {
     /**
      * 200 OK + ArrayBuffer
      * @param {ArrayBuffer} body 要发送的数据
-     * @returns 
      */
     _200Buffer(body) {
         return [200, {
@@ -49,7 +48,6 @@ const code = {
     /**
      * 400 Bad Request
      * @param {string} detal 错误信息
-     * @returns 
      */
     _400(detal) {
         return [400, {
@@ -58,45 +56,41 @@ const code = {
         }, JSON.stringify({ message: detal })]
     },
 
-    /** 403 Forbidden */
-    _403() {
+    /**
+     * 403 Forbidden
+     * @param {string|null} detal 错误信息 (可选) 
+     */
+    _403(detal) {
         return [403, {
             'content-type': 'text/html',
             'cache-control': cacheCtrl.no,
-        }, '<center><h1>403 Forbidden</h1></center><hr>']
+        }, '<center><h1>403 Forbidden</h1></center><hr>' + detal]
     },
 
     /** 404 Not Found */
     _404() {
-        return [404,
-            {
-                'content-type': 'text/html',
-                'cache-control': cacheCtrl.yes,
-            },
-            '<center><h1>404 Not Found</h1></center><hr>'
-        ]
+        return [404, {
+            'content-type': 'text/html',
+            'cache-control': cacheCtrl.yes,
+        }, '<center><h1>404 Not Found</h1></center><hr>']
     },
 
     /** 405 Method Not Allowed
      * @param {string} method 允许的协议
      */
     _405(method) {
-        return [405,
-            { allow: method, 'content-type': 'text/html' },
-            `<center><h1>405 Method Not Allowed</h1></center><hr>This path only allows ${method} request methods!`
-        ]
+        return [405, {
+            allow: method,
+            'content-type': 'text/html'
+        }, `<center><h1>405 Method Not Allowed</h1></center><hr>This path only allows ${method} request methods!`]
     },
 
-    /**
-     * 500 Internal Server Error
-     * @param {string} detal 错误信息
-     * @returns 
-     */
-    _500(detal) {
+    /** 500 Internal Server Error */
+    _500() {
         return [500, {
             'content-type': 'application/json; charset=utf-8',
             'cache-control': cacheCtrl.no,
-        }, JSON.stringify({ message: detal })]
+        }, '']
     },
 
     /** 503 Service Unavailable */
@@ -104,7 +98,7 @@ const code = {
         return [500, {
             'retry-after': '60',
             'cache-control': cacheCtrl.no,
-        }, JSON.stringify({ message: detal })]
+        }, '']
     },
 }
 

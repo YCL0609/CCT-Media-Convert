@@ -1,7 +1,7 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
-import { LogG, SettingsG } from '../main.js';
+import { LogG, SettingsG } from '../global.js';
 import { File, Log } from '../libs/file.js';
 import { joinPath } from '../libs/base.js';
 import * as winproc from 'cctmc:winproc';

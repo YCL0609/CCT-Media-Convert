@@ -1,8 +1,8 @@
-import { File, joinPath } from "../libs/index.js";
-import { code, verifyPath } from "./libs.js";
-import { SettingsG } from "../main.js";
-import { runSanjuuni } from "../runner/libs.js";
 import { imagePerProcess } from "../runner/picture.js";
+import { File, joinPath } from "../libs/index.js";
+import { runSanjuuni } from "../runner/libs.js";
+import { code, verifyPath } from "./libs.js";
+import { SettingsG } from "../global.js";
 
 /** 进度缓存变量 */
 let _status = {
@@ -48,7 +48,7 @@ function _progress(data) {
 }
 
 /** API 路径处理程序映射 */
-const api = {
+const apiMap = {
     // 列出文件
     '/api/fs/list': (_, __, body) => {
         const safePath = verifyPath(body.path);
@@ -80,7 +80,7 @@ const api = {
             const finalPath = joinPath(SettingsG.sep, SettingsG.appDir, ...verifyPath(name));
             if (!File.isFile(finalPath)) return code._404();
             const [ok, content] = File.delete(finalPath);
-            if (!ok && content === '') throw new Error('File delete error: '+ name);
+            if (!ok && content === '') throw new Error('File delete error: ' + name);
         }
         return code._204();
     },
@@ -127,10 +127,11 @@ const api = {
             });
         return code._201()
     },
-    '/api/job/clearError': () => {
+    // 重置错误
+    '/api/job/cleanError': () => {
         _status.inError = false;
         return code._201()
     }
 }
 
-export { api }
+export { apiMap }

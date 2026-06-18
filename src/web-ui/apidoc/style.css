@@ -1,0 +1,40 @@
+/*
+  SPDX-License-Identifier: GPL-2.0-or-later
+  SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool> 
+*/
+
+h2 {
+    margin-top: 25px;
+    margin-bottom: 0;
+    line-height: normal;
+}
+
+p {
+    color: #0066cc;
+}
+
+pre,
+code {
+    margin: 0;
+    background-color: #ccc;
+}
+
+.less {
+    width: 93%;
+}
+
+@media (prefers-color-scheme: dark) {
+    body {
+        color: #fff;
+        background-color: #222;
+    }
+
+    p {
+        color: #7fffd4
+    }
+
+    pre,
+    code {
+        background-color: #555;
+    }
+}

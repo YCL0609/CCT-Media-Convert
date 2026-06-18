@@ -1,5 +1,5 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
@@ -49,13 +49,13 @@ const File = {
     },
 
     /**
-         * 读取文件（支持文本与二进制文件）
-         * @param {string} path 要读取的文件路径
-         * @param {string|ArrayBuffer|Uint8Array} defaultContent 默认的文件内容
-         * @returns {[boolean, string|ArrayBuffer|Uint8Array]} 返回一个元组
-         * - `success`: 操作是否成功
-         * - `content`: 文件内容（ArrayBuffer 或 字符串）, 若操作失败则返回默认内容
-         */
+     * 读取文件（支持文本与二进制文件）
+     * @param {string} path 要读取的文件路径
+     * @param {string|ArrayBuffer|Uint8Array} defaultContent 默认的文件内容
+     * @returns {[boolean, string|ArrayBuffer|Uint8Array]} 返回一个元组
+     * - `success`: 操作是否成功
+     * - `content`: 文件内容（ArrayBuffer 或 字符串）, 若操作失败则返回默认内容
+     */
     read(path, defaultContent = '') {
         if (!path) return [false, defaultContent];
 

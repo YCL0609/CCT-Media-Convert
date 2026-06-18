@@ -1,22 +1,7 @@
 {
-    "/": {
-        "ETag": "b0.5",
-        "name": "root_html",
-        "type": "text/html; charset=utf-8"
-    },
-    "/index.html": {
-        "ETag": "b0.5",
-        "name": "root_html",
-        "type": "text/html; charset=utf-8"
-    },
-    "/index.css": {
-        "ETag": "b0.5",
-        "name": "root_css",
-        "type": "text/css; charset=utf-8"
-    },
-    "/index.js": {
-        "ETag": "b0.5",
-        "name": "root_js",
-        "type": "application/javascript"
-    }
+    "/": "root",
+    "/index.html": "root",
+    "/apidoc": "apidoc",
+    "/apidoc_zh": "apidoc_zh",
+    "/apidoc_en": "apidoc_en"
 }

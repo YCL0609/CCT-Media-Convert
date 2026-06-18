@@ -1,11 +1,11 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
 import { File, joinPath, bufferToString } from '../libs/index.js';
 import { code, cacheCtrl, verifyPath } from './libs.js';
+import { LogG, SettingsG } from '../global.js';
 import { getSource } from 'cctmc:sources';
-import { LogG, SettingsG } from '../main.js';
-import { api } from './apiHandle.js';
+import { apiMap } from './apiHandle.js';
 import * as net from 'cctmc:mininet';
 import * as os from 'qjs:os';
 
@@ -14,16 +14,23 @@ import * as os from 'qjs:os';
  * @returns {void}
  */
 async function startServer() {
-    if (SettingsG.mode < 0 || SettingsG.mode > 1) throw new Error('Function running in not GUI or API mode!');
-    const pathMap = JSON.parse(getSource('pathMap'));
+    if (SettingsG.mode !== 1 && SettingsG.mode !== 2) throw new Error('Function running in not GUI or API mode!');
+    const fileMap = JSON.parse(getSource('pathMap'));
     const useGUI = SettingsG.mode == 1;
+    const version = getSource('version');
 
     net.serve(SettingsG.net.LANAccess, SettingsG.net.port ?? 8080, (request) => {
-        const rawUri = request.uri.toLowerCase();
+        const rawUri = request.uri;
         const url = rawUri.includes('?') ? rawUri.split('?')[1] : rawUri;
-        LogG.debug(`收到请求: ${request.method} ${url}`);
+
         // 心跳包返回
         if (url === '/ping') return code._204();
+        
+        // 合规性检查
+        const isFile = !!fileMap[url];
+        const isAPI = !!apiMap[url];
+        if (!isFile && !isAPI) return code._404();
+        else if (!useGUI && isFile) return code._403('Web GUI mode disabled.');
 
         // 请求体解析
         let body;
@@ -42,33 +49,33 @@ async function startServer() {
             body = bufferToString(request.body)
         }
 
-        if (request.method === 'GET' && useGUI) { // GUI 模式静态资源返回
-            const cfg = pathMap[url];
-            if (cfg) {
-                // 缓存命中
-                if (request.headers['If-None-Match'] === cfg.ETag) return [304, { 'cache-control': cacheCtrl.yes, ETag: cfg.ETag }, '']
+        // GUI 模式静态资源返回
+        if (request.method === 'GET') {
+            if (isAPI) return code._405('POST');
 
-                // 缓存未命中
-                const txt = getSource(pathMap[url].name);
-                return [200, { 'content-type': cfg.type, ETag: cfg.ETag }, txt]
-            } else {
-                // '/api'路径返回405其他返回404
-                return url.startsWith('/api') ? code._405('POST') : code._404();
-            }
+            // 缓存命中
+            if (request.headers['If-None-Match'] === version) return [304, { 'cache-control': cacheCtrl.yes, ETag: version }, ''];
 
-        } else if (request.method === 'POST') { // API 模式返回
+            // 缓存未命中
+            else return [200, { 'content-type': 'text/html; charset=utf-8', ETag: version }, getSource(fileMap[url])];
+        }
+
+        // API 模式返回
+        else if (request.method === 'POST') {
+            if (isFile) return code._405('GET');
+
             try {
-                if (api[url]) return api[url](request.query, request.headers, body)
-                else return code._404();
+                return apiMap[url](request.query, request.headers, body);
             } catch (err) {
                 return code._400(err?.message || String(err));
             }
-        } else {
-            return code._405(url.startsWith('/api') ? 'POST' : 'GET');
         }
+
+        // 错误处理
+        else return code._500();
     });
 
-    LogG.info('HTTP 服务器启动成功, 可使用浏览器访问 http://localhost:' + SettingsG.net.port ?? 8080);
+    LogG.info('HTTP 服务器启动成功, 网址: http://localhost:' + SettingsG.net.port ?? 8080);
 
     // 主循环
     while (true) {
@@ -77,6 +84,5 @@ async function startServer() {
         await os.sleepAsync(1);
     }
 }
-
 
 export { startServer };

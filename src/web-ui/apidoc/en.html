@@ -1,0 +1,208 @@
+<!-- 
+  SPDX-License-Identifier: GPL-2.0-or-later
+  SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool> 
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Documentation</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+    <h2>1. File System Interfaces</h2>
+    <hr>
+
+    <h3>1.1 List Files or Folders</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/fs/list</code></li>
+        <li><strong>Request Body (JSON)</strong>:
+            <pre><code class="language-json">{
+  "path": "String or Array", // Target path
+  "type": 1, // 1: Scan folder, 2: Scan file
+  "exts": "jpg,png" // (Optional) Only valid when type is 2, filters file extensions separated by commas
+}</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>200 OK</code>: Successfully returned file or folder list data.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.2 Get File Content</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/fs/get</code></li>
+        <li><strong>Request Body (JSON)</strong>:
+            <pre><code class="language-json">{
+  "path": "String or Array" // Relative path of the file
+}</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>200 OK</code>: Success, returns file binary stream (Buffer).</li>
+                <li><code>404 Not Found</code>: File does not exist.</li>
+                <li><code>500 Internal Server Error</code>: Failed to read file.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.3 Write/Upload File</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/fs/set</code></li>
+        <li><strong>Request Headers</strong>:
+            <ul>
+                <li><code>File-Path</code>: Target save directory</li>
+                <li><code>File-Name</code>: Target file name (If not provided, the system will automatically generate
+                    <code>noname_timestamp.bin</code>)
+                </li>
+            </ul>
+        </li>
+        <li><strong>Request Body</strong>:
+            <ul>
+                <li>Raw binary data of the file (Binary).</li>
+            </ul>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>201 Created</code>: File written successfully.</li>
+                <li><code>500 Internal Server Error</code>: Failed to write file.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.4 Delete Files</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/fs/del</code></li>
+        <li><strong>Request Body (JSON Array)</strong>:
+            <pre><code class="language-json">[
+  "path/to/file1.txt",
+  "path/to/file2.png"
+]</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>204 No Content</code>: Batch deletion successful.</li>
+                <li><code>404 Not Found</code>: Non-existent files exist in the files to be deleted.</li>
+                <li><code>500 Internal Server Error</code>: Underlying error occurred during deletion.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h2>2. Configuration Management Interfaces (Settings)</h2>
+    <hr>
+
+    <p><strong>Permission Notice</strong>: Configuration management related interfaces restrict the access source,
+        allowing only local requests whose <code>Host</code> is <code>127.0.0.1:{port}</code> or
+        <code>localhost:{port}</code> to access.
+    </p>
+
+    <h3>2.1 Get Current Configuration</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/settings/get</code></li>
+        <li><strong>Request Headers</strong>:
+            <ul>
+                <li>Requires a correct <code>Host</code> header.</li>
+            </ul>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>200 OK</code>: Returns global configuration object (includes parameters like
+                    <code>sanjuuni</code>, <code>input</code>, <code>output</code>, <code>net</code>, etc.).
+                </li>
+                <li><code>403 Forbidden</code>: Non-local request, access denied.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>2.2 Modify/Write Configuration</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/settings/set</code></li>
+        <li><strong>Request Headers</strong>:
+            <ul>
+                <li>Requires a correct <code>Host</code> header.</li>
+            </ul>
+        </li>
+        <li><strong>Request Body (JSON)</strong>:
+            <pre><code class="language-json">{
+  // Key-value pairs of configuration items to be modified
+}</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>201 Created</code>: Configuration modified successfully.</li>
+                <li><code>403 Forbidden</code>: Non-local request, access denied.</li>
+                <li><code>500 Internal Server Error</code>: Configuration parameter validation failed or write error.
+                </li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h2>3. Task/Job Interfaces (Job)</h2>
+    <hr>
+
+    <h3>3.1 Get Current Job Status</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/job/status</code></li>
+        <li><strong>Response Body (JSON)</strong>:
+            <pre><code class="language-json">{
+  "inRunning": false, // Whether it is currently running
+  "inError": false, // Whether an error occurred
+  "time": 0, // Execution elapsed time
+  "wait": [], // Waiting queue
+  "processing": [], // Processing queue
+  "finish": [], // Finished queue
+  "ignore": [] // Ignored queue
+}</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>200 OK</code>: Successfully returned status.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>3.2 Start Executing Task</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/job/start</code></li>
+        <li><strong>Request Body (JSON Array)</strong>:
+            <pre><code class="language-json">[
+  // List of task/image data to be processed
+]</code></pre>
+        </li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>201 Created</code>: Task successfully triggered and moved to background asynchronous execution
+                    (returns 201 directly if an empty array is passed).</li>
+                <li><code>400 Bad Request</code>: Request body is not a valid array.</li>
+                <li><code>503 Service Unavailable</code>: An existing task is currently running, cannot start
+                    repeatedly.</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>3.3 Clear Error Status</h3>
+    <ul>
+        <li><strong>Endpoint Path</strong>: <code>/api/job/clearError</code></li>
+        <li><strong>Description</strong>: Resets <code>inError</code> in the job status to <code>false</code>.</li>
+        <li><strong>Response Status Codes</strong>:
+            <ul>
+                <li><code>201 Created</code>: Reset successful.</li>
+            </ul>
+        </li>
+    </ul>
+</body>
+
+</html>

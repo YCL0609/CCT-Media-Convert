@@ -1,7 +1,8 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
 import { errorExit, exitApp, Log, Settings } from './libs/index.js';
+import { initGlobals, LogG, SettingsG } from './global.js';
 import { imagePerProcess } from './runner/picture.js';
 import { startServer } from './net/server.js';
 import { getSource } from 'cctmc:sources';
@@ -10,19 +11,19 @@ import * as os from 'qjs:os';
 
 // 帮助文本输出
 if (scriptArgs.includes('-h') || scriptArgs.includes('--help')) {
-    const rawText = getSource('helpText');
     const appName = (os.exePath() || '').split(/[\\/]/).pop() || '<Program>';
-    std.out.puts(rawText.replace('$NAME$', appName));
+    const rawText = getSource('helpText')
+        .replace('$VERSION$', getSource('version'))
+        .replace('$NAME$', appName);
+    std.out.puts(rawText);
     std.out.flush();
     std.exit(0);
 }
 
-// 初始化并导出
-export let LogG = null;
-export let SettingsG = null;
 try {
-    SettingsG = new Settings();
-    LogG = new Log(SettingsG.sep, SettingsG.logDir, SettingsG.debug);
+    const settings = new Settings();
+    const log = new Log(settings.sep, settings.logDir, settings.debug);
+    initGlobals(log, settings);
 } catch (err) {
     errorExit('初始化错误: ' + err?.message || String(err));
 }

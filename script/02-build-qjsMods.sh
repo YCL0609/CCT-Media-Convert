@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
+# SPDX-License-Identifier: GPL-2.0-or-later
+
 set -euo pipefail
 
 # 切换到项目根目录
@@ -7,7 +10,7 @@ cd "$ROOT"
 
 TEMPLATE="src/qjs-modules/resources.c"
 OUTPUT="dist/resources.c"
-CONF="resources.conf"
+CONF="src/resources.conf"
 
 mkdir -p dist
 
@@ -18,6 +21,9 @@ cleanup() {
     rm -f "$DATA_FILE" "$TABLE_FILE"
 }
 trap cleanup EXIT
+
+echo "==> 构建 Web UI ..."
+node src/web-ui/build.js
 
 echo "==> 预构建 QuickJS 模块 ..."
 
@@ -66,7 +72,6 @@ while IFS='=' read -r NAME FILE || [[ -n "$NAME" || -n "$FILE" ]]; do
         printf "static const unsigned char %s[] = {};\n\n" "$VAR" >> "$DATA_FILE"
     fi
 
-    # 2. 生成索引表数据
     printf "    { \"%s\", %s, %s },\n" "$NAME" "$VAR" "$SIZE" >> "$TABLE_FILE"
 
 done < "$CONF"

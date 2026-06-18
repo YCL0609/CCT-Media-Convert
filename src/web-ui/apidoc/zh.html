@@ -1,0 +1,201 @@
+<!-- 
+  SPDX-License-Identifier: GPL-2.0-or-later
+  SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool> 
+-->
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Document</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+    <h2>1. 文件系统接口</h2>
+    <hr>
+    <h3>1.1 列出文件或文件夹</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/fs/list</code></li>
+        <li><strong>请求体 (JSON)</strong>:
+            <pre><code class="language-json">{
+  "path": "字符串或数组", // 目标路径
+  "type": 1, // 1: 扫描文件夹, 2: 扫描文件
+  "exts": "jpg,png" // (可选) 仅在 type 为 2 时有效，筛选文件后缀，用逗号隔开
+}</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>200 OK</code>:成功返回文件或文件夹列表数据。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.2 获取文件内容</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/fs/get</code></li>
+        <li><strong>请求体 (JSON)</strong>:
+            <pre><code class="language-json">{
+  "path": "字符串或数组" // 文件相对路径
+}</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>200 OK</code>:成功，返回文件二进制流 (Buffer)。</li>
+                <li><code>404 Not Found</code>:文件不存在。</li>
+                <li><code>500 Internal Server Error</code>:文件读取失败。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.3 写入/上传文件</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/fs/set</code></li>
+        <li><strong>请求头 (Headers)</strong>:
+            <ul>
+                <li><code>File-Path</code>: 目标保存目录</li>
+                <li><code>File-Name</code>: 目标文件名（如果未提供，系统会自动生成 <code>noname_时间戳.bin</code>）</li>
+            </ul>
+        </li>
+        <li><strong>请求体 (Body)</strong>:
+            <ul>
+                <li>文件的原始二进制数据 (Binary)。</li>
+            </ul>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>201 Created</code>:文件写入成功。</li>
+                <li><code>500 Internal Server Error</code>:文件写入失败。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>1.4 删除文件</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/fs/del</code></li>
+        <li><strong>请求体 (JSON Array)</strong>:
+            <pre><code class="language-json">[
+  "path/to/file1.txt",
+  "path/to/file2.png"
+]</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>204 No Content</code>:批量删除成功。</li>
+                <li><code>404 Not Found</code>:要删除的文件中存在不存在的文件。</li>
+                <li><code>500 Internal Server Error</code>:删除过程中出现底层错误。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h2>2. 配置管理接口 (Settings)</h2>
+    <hr>
+
+    <p><strong>权限注意</strong>:配置管理相关接口限制了访问源，仅允许 <code>Host</code> 为 <code>127.0.0.1:{port}</code> 或
+        <code>localhost:{port}</code> 的本地请求访问。
+    </p>
+
+    <h3>2.1 获取当前配置</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/settings/get</code></li>
+        <li><strong>请求头 (Headers)</strong>:
+            <ul>
+                <li>需要携带正确的 <code>Host</code>。</li>
+            </ul>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>200 OK</code>:返回全局配置对象（包含 <code>sanjuuni</code>, <code>input</code>, <code>output</code>,
+                    <code>net</code> 等参数）。
+                </li>
+                <li><code>403 Forbidden</code>:非本地请求，拒绝访问。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>2.2 修改/写入配置</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/settings/set</code></li>
+        <li><strong>请求头 (Headers)</strong>:
+            <ul>
+                <li>需要携带正确的 <code>Host</code>。</li>
+            </ul>
+        </li>
+        <li><strong>请求体 (JSON)</strong>:
+            <pre><code class="language-json">{
+  // 欲修改的配置项键值对
+}</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>201 Created</code>:配置修改成功。</li>
+                <li><code>403 Forbidden</code>:非本地请求，拒绝访问。</li>
+                <li><code>500 Internal Server Error</code>:配置参数校验失败或写入错误。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h2>3. 任务/作业接口 (Job)</h2>
+    <hr>
+
+    <h3>3.1 获取当前工作状态</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/job/status</code></li>
+        <li><strong>返回体 (JSON)</strong>:
+            <pre><code class="language-json">{
+  "inRunning": false, // 是否正在运行
+  "inError": false, // 是否发生错误
+  "time": 0, // 运行耗时
+  "wait": [], // 等待队列
+  "processing": [], // 正在处理队列
+  "finish": [], // 已完成队列
+  "ignore": [] // 忽略队列
+}</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>200 OK</code>:成功返回状态。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>3.2 开始执行任务</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/job/start</code></li>
+        <li><strong>请求体 (JSON Array)</strong>:
+            <pre><code class="language-json">[
+  // 需要处理的任务/图片数据列表
+]</code></pre>
+        </li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>201 Created</code>:任务成功触发并转入后台异步运行（若传入空数组直接返回 201）。</li>
+                <li><code>400 Bad Request</code>:请求体不是一个有效的数组。</li>
+                <li><code>503 Service Unavailable</code>:当前已有任务在运行中，无法重复启动。</li>
+            </ul>
+        </li>
+    </ul>
+    <hr class="less">
+
+    <h3>3.3 清除错误状态</h3>
+    <ul>
+        <li><strong>接口路径</strong>:<code>/api/job/clearError</code></li>
+        <li><strong>说明</strong>:将作业状态中的 <code>inError</code> 重置为 <code>false</code>。</li>
+        <li><strong>返回状态码</strong>:
+            <ul>
+                <li><code>201 Created</code>:重置成功。</li>
+            </ul>
+        </li>
+    </ul>
+</body>
+
+</html>

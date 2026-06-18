@@ -1,10 +1,10 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
+import { LogG } from '../global.js';
 import * as winproc from 'cctmc:winproc';
-import { LogG } from '../main.js';
 
 /** 允许的文件后缀名 */
 const allowdExt = ['.jpg', '.png', '.jpeg'];

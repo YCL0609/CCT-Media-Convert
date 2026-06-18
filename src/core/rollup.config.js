@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
+// SPDX-License-Identifier: GPL-2.0-or-later
+
 import terser from '@rollup/plugin-terser';
 
 export default {

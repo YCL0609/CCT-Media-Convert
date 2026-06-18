@@ -1,11 +1,9 @@
+// SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool>
 // SPDX-License-Identifier: GPL-2.0-or-later
-// Copyright (C) 2026 YCL
 
+const processBar = document.getElementById('processBar');
 const apiStatusE = document.getElementById('APIStatus');
-const processFE = document.getElementById('processF');
-const processIE = document.getElementById('processI');
-const processPE = document.getElementById('processP');
-const processWE = document.getElementById('processW');
+const JobStatusE = document.getElementById('JobStatus');
 const multipleE = document.getElementById('multiple');
 const noteDivE = document.getElementById('noteDiv');
 const imgListE = document.getElementById('imgList');
@@ -22,6 +20,23 @@ const imgMIME = {
     ['jpeg']: 'image/jpeg',
     ['png']: 'image/png',
 };
+const statusMap = {
+    0: {
+        class: 'status',
+        job: '未知',
+        api: 'API 状态未知',
+    },
+    1: {
+        class: 'status offline',
+        job: '忙碌',
+        api: 'API 离线',
+    },
+    2: {
+        class: 'status online',
+        job: '空闲',
+        api: 'API 在线',
+    }
+};
 
 let pingErr = 0;
 let offline = true;
@@ -29,11 +44,74 @@ let inRunning = false;
 let onShowStatus = false;
 
 // 进度显示文字
-function showProcess({ finish, processing, ignore, wait }) {
-    processFE.innerText = finish ?? 0;
-    processPE.innerText = processing ?? 0;
-    processIE.innerText = ignore ?? 0;
-    processWE.innerText = wait ?? 0;
+function showProcess({ finish = 0, processing = 0, ignore = 0, wait = 1 } = {}) {
+    const total = finish + processing + ignore + wait;
+    const pctFinish = total ? (finish / total) * 100 : 0;
+    const pctProcessing = total ? (processing / total) * 100 : 0;
+    const pctIgnore = total ? (ignore / total) * 100 : 0;
+    const pctWait = total ? (wait / total) * 100 : 0;
+
+    processBar.style.setProperty('--w-finish', `${pctFinish}%`);
+    processBar.style.setProperty('--w-processing', `${pctProcessing}%`);
+    processBar.style.setProperty('--w-ignore', `${pctIgnore}%`);
+    processBar.style.setProperty('--w-wait', `${pctWait}%`);
+}
+
+// 显示状态信息
+function statusToHTML(api, job) {
+    function toHTML(el, classN, text) {
+        el.className = classN;
+        el.innerText = text;
+    }
+
+    const jobcfg = statusMap[job];
+    const apicfg = statusMap[api];
+
+    switch (api) {
+        case 0:
+            offline = true;
+            document.querySelectorAll('button').forEach(e => e.disabled = true);
+            toHTML(JobStatusE, apicfg.class, apicfg.job);
+            toHTML(apiStatusE, apicfg.class, apicfg.api);
+            showNote('warn', '无法探测后端 API 状态');
+            showNote('warn', '无法探测后端运行状态');
+            return;
+
+        case 1:
+            offline = true;
+            document.querySelectorAll('button').forEach(e => e.disabled = false);
+            toHTML(JobStatusE, apicfg.class, apicfg.job);
+            toHTML(apiStatusE, apicfg.class, apicfg.api);
+            showNote('error', '后端 API 离线');
+            return;
+
+        case 2:
+            offline = false;
+            document.querySelectorAll('button').forEach(e => e.disabled = false);
+            toHTML(apiStatusE, apicfg.class, apicfg.api);
+            showNote('info', '连接到后端 API');
+            break;
+
+        default: break;
+    }
+
+    switch (job) {
+        case 0:
+            toHTML(JobStatusE, jobcfg.class, jobcfg.job);
+            showNote('warn', '无法探测后端运行状态');
+            break;
+        case 1:
+            toHTML(JobStatusE, jobcfg.class, jobcfg.job);
+            showNote('warn', '后端进入忙碌状态');
+            break;
+        case 2:
+            toHTML(JobStatusE, jobcfg.class, jobcfg.job);
+            showNote('info', '后端进入空闲状态');
+            break;
+
+        default: break;
+    }
+
 }
 
 // 提示信息显示
@@ -75,6 +153,7 @@ function showStatus() {
     if (onShowStatus) return;
     onShowStatus = true;
     let showError = true;
+    let showInfo = true;
     let timmer = null;
     timmer = setInterval(async () => {
         try {
@@ -84,16 +163,21 @@ function showStatus() {
             inRunning = data.inRunning;
             if (data.inError) {
                 showNote('error', '后端错误信号触发');
+                statusToHTML(-1, 0);
                 clearInterval(timmer);
                 // 发送错误清空请求
-                const response1 = await fetch(baseUrl + '/api/job/clearError');
-                if (response1.status !== 201) showNote('warn', '重置后端错误信号失败');
+                const response1 = await fetch(baseUrl + '/api/job/cleanError', { method: 'POST' });
+                if (response1.status !== 204) showNote('warn', '重置后端错误信号失败');
                 inRunning = false;
                 return;
             }
 
             // 进度显示
             if (data.inRunning) {
+                if (showInfo) {
+                    showInfo = false;
+                    statusToHTML(-1, 1);
+                }
                 showProcess({
                     finish: data.finish.length,
                     ignore: data.ignore.length,
@@ -101,12 +185,13 @@ function showStatus() {
                     wait: data.wait.length,
                 });
             } else {
-                showProcess({});
+                statusToHTML(-1, 2);
+                showProcess();
                 clearInterval(timmer);
-                showNote('info', '处理完成');
             };
         } catch (_) {
             if (showError) {
+                statusToHTML(-1, 0);
                 showNote('error', '后端状态获取失败: ' + err.message);
                 showError = false;
             }
@@ -248,10 +333,8 @@ document.getElementById('delete').addEventListener('click', async (event) => {
 
         if (response.ok) {
             showNote('info', '删除成功');
-            //  清理 DOM
-            selectedItems.forEach(item => {
-                item.cardEl.remove();
-            });
+            // 清理 DOM
+            selectedItems.forEach(item => item.cardEl.remove());
         } else {
             showNote('error', '删除失败: Code ' + response.status);
         }
@@ -269,6 +352,7 @@ document.getElementById('dojob').addEventListener('click', async (event) => {
     inRunning = true;
     const btnE = event.currentTarget;
     btnE.disabled = true;
+
     // 获取选择列表
     const list = [];
     for (const el of document.querySelectorAll('input:checked')) {
@@ -285,9 +369,7 @@ document.getElementById('dojob').addEventListener('click', async (event) => {
     try {
         const response = await fetch(baseUrl + '/api/job/start', {
             method: 'POST',
-            headers: {
-                'Data-Type': 'json',
-            },
+            headers: { 'Data-Type': 'json' },
             body: JSON.stringify(list),
         });
         if (!response.ok) {
@@ -313,33 +395,18 @@ setInterval(async () => {
         if (response.ok) {
             pingErr = 0;
             if (offline) {
-                offline = false;
-                document.querySelectorAll('button').forEach(e => e.disabled = false);
-                apiStatusE.className = 'status online';
-                apiStatusE.innerText = 'API 在线';
-                showNote('info', '连接到后端 API');
+                statusToHTML(2, -1);
+                showStatus();
                 selented.clear();
                 inputDirShow();
             }
         } else {
             pingErr++;
-            if (!offline && pingErr > 3) {
-                offline = true;
-                document.querySelectorAll('button').forEach(e => e.disabled = true);
-                apiStatusE.className = 'status offline';
-                apiStatusE.innerText = 'API 离线';
-                showNote('error', '后端 API 离线');
-            }
+            if (!offline && pingErr > 3) statusToHTML(1, -1);
         }
     } catch (_) {
         pingErr++;
-        if (!offline && pingErr > 3) {
-            offline = true;
-            document.querySelectorAll('button').forEach(e => e.disabled = true);
-            apiStatusE.className = 'status offline';
-            apiStatusE.innerText = 'API 离线';
-            showNote('warn', '无法探测后端 API 状态');
-        }
+        if (!offline && pingErr > 3) statusToHTML(0, -1);
     }
 }, 1500)
 

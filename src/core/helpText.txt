@@ -1,4 +1,4 @@
-CCT-Media-Convert (b0.5)
+CCT-Media-Convert ($VERSION$)
 将图像/视频转换为 CC:T (ComputerCraft: Tweaked) 显示器可用的格式
 
 用法:

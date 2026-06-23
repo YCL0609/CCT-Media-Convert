@@ -4,7 +4,7 @@
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
 import { LogG } from '../global.js';
-import * as winproc from 'cctmc:winproc';
+import * as winproc from 'qjsa:winproc';
 
 /** 允许的文件后缀名 */
 const allowdExt = ['.jpg', '.png', '.jpeg'];

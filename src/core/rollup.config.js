@@ -8,9 +8,9 @@ export default {
   external: [
     'qjs:std',
     'qjs:os',
-    'cctmc:sources',
-    'cctmc:winproc',
-    'cctmc:mininet'
+    'qjsa:resources',
+    'qjsa:winproc',
+    'qjsa:mininet'
   ],
 
   output: {

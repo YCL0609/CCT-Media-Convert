@@ -5,7 +5,7 @@ import { errorExit, exitApp, Log, Settings } from './libs/index.js';
 import { initGlobals, LogG, SettingsG } from './global.js';
 import { imagePerProcess } from './runner/picture.js';
 import { startServer } from './net/server.js';
-import { getSource } from 'cctmc:sources';
+import { getSource } from 'qjsa:resources';
 import * as std from 'qjs:std';
 import * as os from 'qjs:os';
 

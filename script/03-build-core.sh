@@ -12,9 +12,9 @@ npx rollup -c "$ROOT/src/core/rollup.config.js"
 
 echo "==> qjsc 编译 ..."
 ./dist/quickjs/build-linux/qjsc \
-    -M cctmc:sources,sources \
-    -M cctmc:mininet,mongoose \
-    -M cctmc:winproc,winproc \
+    -M qjsa:resources,resources \
+    -M qjsa:mininet,mongoose \
+    -M qjsa:winproc,winproc \
     -e -o ./dist/core.c \
     "$ROOT/dist/core.js"
 ls -l "$ROOT/dist/core.c"

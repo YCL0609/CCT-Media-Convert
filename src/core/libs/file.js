@@ -3,7 +3,7 @@
 
 import * as os from 'qjs:os';
 import * as std from 'qjs:std';
-import { getSource } from 'cctmc:sources';
+import { getSource } from 'qjsa:resources';
 import { bufferToString, exitApp, joinPath, jsonCheck } from './base.js';
 import { cmdLineHandle } from './cmd.js';
 const _isWin = os.platform === 'win32';

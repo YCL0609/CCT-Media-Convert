@@ -4,7 +4,7 @@
 import { LogG, SettingsG } from '../global.js';
 import { File, Log } from '../libs/file.js';
 import { joinPath } from '../libs/base.js';
-import * as winproc from 'cctmc:winproc';
+import * as winproc from 'qjsa:winproc';
 import * as os from 'qjs:os';
 
 // 活跃子进程集合

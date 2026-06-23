@@ -4,9 +4,9 @@
 import { File, joinPath, bufferToString } from '../libs/index.js';
 import { code, cacheCtrl, verifyPath } from './libs.js';
 import { LogG, SettingsG } from '../global.js';
-import { getSource } from 'cctmc:sources';
+import { getSource } from 'qjsa:resources';
 import { apiMap } from './apiHandle.js';
-import * as net from 'cctmc:mininet';
+import * as net from 'qjsa:mininet';
 import * as os from 'qjs:os';
 
 /**

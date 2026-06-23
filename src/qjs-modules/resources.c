@@ -1,8 +1,14 @@
 /* SPDX-FileCopyrightText: 2026 YCL <email@ycl.cool> */
-/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* SPDX-License-Identifier: MIT */
 
 #include <string.h>
 #include "quickjs.h"
+
+#ifdef JS_SHARED_LIBRARY
+#define JS_INIT_MODULE js_init_module
+#else
+#define JS_INIT_MODULE js_init_module_resources
+#endif
 
 /* @@RESOURCE_DATA@@ */
 
@@ -77,7 +83,7 @@ static int js_sources_init(
         sizeof(funcs) / sizeof(funcs[0]));
 }
 
-JSModuleDef *js_init_module_sources(
+JSModuleDef *JS_INIT_MODULE(
     JSContext *ctx,
     const char *module_name)
 {

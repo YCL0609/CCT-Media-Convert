@@ -1,0 +1,86 @@
+name: Build and Package CCT-Media-Convert
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake \
+            musl-tools \
+            gcc-mingw-w64-x86-64 \
+            gawk \
+            xxd \
+            file \
+            zip \
+            unzip
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Step 1 - Build qjsc
+        run: chmod +x ./script/*.sh && ./script/01-build-qjsc.sh
+
+      - name: Step 2 - Build QuickJS Modules
+        run: ./script/02-build-qjsMods.sh
+
+      - name: Step 3 - Build Core
+        run: ./script/03-build-core.sh
+
+      - name: Step 4 - Compile Executable (Linux & Windows)
+        run: ./script/04-build-app.sh
+
+      - name: Step 5 - Create Windows Full Package
+        run: |
+          # 1. 创建打包目标根文件夹
+          mkdir -p dist/CCT-Media-Convert
+          
+          # 2. 下载并解压 sanjuuni
+          mkdir -p dist/CCT-Media-Convert/sanjuuni
+          curl -L -o sanjuuni.zip https://github.com/MCJack123/sanjuuni/releases/download/0.5/sanjuuni-Win64.zip
+          unzip -j sanjuuni.zip -d dist/CCT-Media-Convert/sanjuuni
+          rm sanjuuni.zip
+          
+          # 3. 创建空文件夹
+          mkdir -p dist/CCT-Media-Convert/input
+          mkdir -p dist/CCT-Media-Convert/output
+          mkdir -p dist/CCT-Media-Convert/logs
+          
+          # 4. 复制生成的 app-win.exe 并改名为 app.exe
+          cp dist/app-win.exe dist/CCT-Media-Convert/app.exe
+          
+          # 5. 打包整个 CCT-Media-Convert 文件夹
+          # Linux 的 zip -r 默认会把空目录直接写入压缩包中
+          cd dist
+          zip -r Win-AMD64-full.zip CCT-Media-Convert/
+          cd ..
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cct-media-convert-artifacts
+          path: |
+            dist/app-linux
+            dist/app-win.exe
+            dist/Win-AMD64-full.zip
